@@ -1,0 +1,55 @@
+<!--
+  DROP-IN NOTIFICATION BELL FOR YOUR LMS
+  Add <div id="nudge-bell"></div> in your navbar
+  Then at page bottom add the script below with your user details
+-->
+<style>
+.nb{position:relative;display:inline-flex;cursor:pointer;padding:8px;border-radius:8px}
+.nb:hover{background:rgba(0,0,0,.05)}
+.nb svg{width:22px;height:22px;fill:currentColor}
+.nb-badge{position:absolute;top:2px;right:2px;min-width:16px;height:16px;background:#e94560;color:#fff;font-size:10px;font-weight:700;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:0 3px}
+.nb-badge.hide{display:none}
+.nb-panel{position:absolute;top:calc(100% + 6px);right:0;width:360px;max-height:440px;background:#fff;border:1px solid #e8e8e8;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.1);z-index:9999;display:none;overflow:hidden}
+.nb-panel.open{display:block}
+.nb-ph{padding:12px 16px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:14px}
+.nb-ma{font-size:12px;color:#2980b9;cursor:pointer;border:none;background:none}
+.nb-list{max-height:380px;overflow-y:auto}
+.nb-item{padding:10px 14px;border-bottom:1px solid #f5f5f5;cursor:pointer;display:flex;gap:8px}
+.nb-item:hover{background:#fafafa}
+.nb-item.unread{background:#f0f7ff}
+.nb-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.nb-dot.info{background:#2980b9}.nb-dot.warning{background:#f39c12}.nb-dot.critical{background:#e94560}.nb-dot.success{background:#27ae60}
+.nb-title{font-weight:600;font-size:12px;margin-bottom:2px}
+.nb-body{font-size:11px;color:#888;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.nb-time{font-size:10px;color:#bbb;margin-top:3px}
+.nb-cta{display:inline-block;margin-top:4px;padding:3px 10px;background:#e94560;color:#fff;border-radius:5px;font-size:11px;font-weight:500;text-decoration:none;border:none;cursor:pointer}
+.nb-empty{padding:30px;text-align:center;color:#bbb;font-size:13px}
+</style>
+<script>
+class NudgeBell{
+  constructor(o){this.el=document.querySelector(o.container||'#nudge-bell');this.api=o.apiBase;this.uid=o.userId;this.role=o.userRole||'student';this.poll=o.pollInterval||30000;this.nudges=[];this.count=0;this.open=false;this._t=null}
+  init(){this._render();this._fetch();this._startPoll();document.addEventListener('click',e=>{if(!this.el.contains(e.target))this._close()})}
+  _render(){this.el.innerHTML=`<div class="nb" id="nb-btn"><svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/></svg><span class="nb-badge hide" id="nb-b">0</span></div><div class="nb-panel" id="nb-p"><div class="nb-ph"><span>Notifications</span><button class="nb-ma" id="nb-ma">Mark all read</button></div><div class="nb-list" id="nb-l"></div></div>`;document.getElementById('nb-btn').onclick=e=>{e.stopPropagation();this.open=!this.open;document.getElementById('nb-p').classList.toggle('open',this.open);if(this.open)this._loadFeed()};document.getElementById('nb-ma').onclick=e=>{e.stopPropagation();this._markAll()}}
+  async _fetch(){try{const r=await fetch(`${this.api}/unread-count?user_id=${this.uid}&role=${this.role}`);const d=await r.json();this.count=d.total||0;const b=document.getElementById('nb-b');b.textContent=this.count>99?'99+':this.count;b.classList.toggle('hide',!this.count)}catch(e){}}
+  async _loadFeed(){try{const r=await fetch(`${this.api}/feed?user_id=${this.uid}&role=${this.role}&status=unread&limit=15`);const d=await r.json();this.nudges=d.nudges||[];this._renderList()}catch(e){}}
+  _renderList(){const l=document.getElementById('nb-l');if(!this.nudges.length){l.innerHTML='<div class="nb-empty">All caught up!</div>';return}l.innerHTML=this.nudges.map(n=>`<div class="nb-item ${['pending','delivered'].includes(n.status)?'unread':''}" onclick="window._nb._click('${n.id}','${n.cta_url||''}')"><div class="nb-dot ${n.severity}"></div><div style="flex:1;min-width:0"><div class="nb-title">${this._esc(n.title)}</div><div class="nb-body">${this._esc(n.body)}</div><div class="nb-time">${this._ago(n.created_at)}</div>${n.cta_text?`<button class="nb-cta">${this._esc(n.cta_text)}</button>`:''}</div></div>`).join('')}
+  async _click(id,url){try{await fetch(`${this.api}/${id}/status`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:url?'clicked':'read'})})}catch(e){}if(url&&url!=='')location.href=url;this._fetch();this._loadFeed()}
+  async _markAll(){try{await fetch(`${this.api}/batch-read?user_id=${this.uid}`,{method:'POST'})}catch(e){}this.count=0;document.getElementById('nb-b').classList.add('hide');this._loadFeed()}
+  _close(){this.open=false;document.getElementById('nb-p')?.classList.remove('open')}
+  _startPoll(){this._t=setInterval(()=>this._fetch(),this.poll)}
+  _ago(d){const s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return'now';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';return Math.floor(s/86400)+'d'}
+  _esc(t){if(!t)return'';const d=document.createElement('div');d.textContent=t;return d.innerHTML}
+  destroy(){clearInterval(this._t)}
+}
+window._nb=null;
+// USAGE: Paste at bottom of your page after login:
+// <script>
+// window._nb = new NudgeBell({
+//   container: '#nudge-bell',
+//   apiBase: 'https://your-backend.onrender.com/api/nudges',
+//   userId: '{{ user.id }}',
+//   userRole: '{{ user.role }}'
+// });
+// window._nb.init();
+// </script>
+</script>
