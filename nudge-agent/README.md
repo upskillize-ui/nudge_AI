@@ -4,6 +4,6 @@ emoji: 🔔
 colorFrom: blue
 colorTo: red
 sdk: docker
-pinned: true
+pinned: false
 app_port: 7860
 ---
