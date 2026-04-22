@@ -29,7 +29,7 @@ tr:hover td{background:#fafbfc}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
 .dot-critical{background:#e94560}.dot-high{background:#f39c12}.dot-medium{background:#2980b9}.dot-ok{background:#27ae60}
 .pill{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
-.pill-ok{background:#e8f5e9;color:#2e7d32}.pill-warn{background:#fff3e0;color:#e65100}.pill-crit{background:#ffebee;color:#c62828}
+.pill-ok{background:#e8f5e9;color:#2e7d32}.pill-warn{background:#fff3e0;color:#e65100}.pill-crit{background:#ffebee;color:#c62828}.pill-blue{background:#e3f2fd;color:#1565c0}
 .empty{padding:40px;text-align:center;color:#aaa;font-size:14px}
 .btn{padding:8px 16px;border-radius:8px;border:1px solid #e8e8e8;background:#fff;cursor:pointer;font-size:13px;font-weight:500}
 .btn:hover{background:#f5f5f5}
@@ -39,6 +39,13 @@ tr:hover td{background:#fafbfc}
 .status-bar{padding:10px 20px;background:#e8f5e9;border-radius:10px;margin-bottom:16px;font-size:13px;color:#2e7d32;display:flex;justify-content:space-between}
 .ai-badge{background:#eeedfe;color:#3c3489;font-size:11px;padding:3px 10px;border-radius:8px;font-weight:600}
 #tab-overview{display:block}#tab-attendance,#tab-recordings,#tab-students,#tab-analytics{display:none}
+
+/* Nudge row severity colours */
+.sev-critical td{border-left:3px solid #e94560}
+.sev-high td{border-left:3px solid #f39c12}
+.sev-info td{border-left:3px solid #2980b9}
+.sev-success td{border-left:3px solid #27ae60}
+.nudge-body{max-width:340px;font-size:12px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -69,7 +76,10 @@ tr:hover td{background:#fafbfc}
   </div>
   <div class="cards" id="overview-cards"></div>
   <div class="section">
-    <div class="section-head">Recent Nudges <button class="btn" onclick="loadOverview()">Refresh</button></div>
+    <div class="section-head">
+      Recent Nudges
+      <button class="btn" onclick="loadOverview()">Refresh</button>
+    </div>
     <div id="recent-nudges"><div class="empty">Loading...</div></div>
   </div>
 </div>
@@ -131,7 +141,7 @@ tr:hover td{background:#fafbfc}
 </div>
 
 <script>
-const API = '';  // Same origin
+const API = '';  // Same origin — agent serves its own dashboard
 const KEY = new URLSearchParams(location.search).get('key') || 'demo';
 const H = {'X-API-Key': KEY, 'Content-Type': 'application/json'};
 
@@ -152,7 +162,21 @@ function showTab(id, el) {
   if(id==='analytics') loadAnalytics();
 }
 
+function ago(d) {
+  const s = Math.floor((Date.now() - new Date(d)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+function sevPill(sev) {
+  const map = {critical:'pill-crit', high:'pill-warn', info:'pill-blue', success:'pill-ok', warning:'pill-warn'};
+  return `<span class="pill ${map[sev]||'pill-blue'}">${sev}</span>`;
+}
+
 async function loadOverview() {
+  // Load stats
   const d = await api('/admin/overview');
   document.getElementById('pending-badge').textContent = d.pending || 0;
   document.getElementById('ai-status').textContent = d.ai_enabled ? 'AI: ON (hybrid)' : 'AI: OFF (rule-based)';
@@ -165,13 +189,44 @@ async function loadOverview() {
     <div class="card"><div class="label">Unwatched Recordings</div><div class="val amber">${d.unwatched_recordings||0}</div></div>
     <div class="card"><div class="label">Students Tracked</div><div class="val green">${d.total_students_tracked||0}</div></div>
   `;
+
+  // Load recent nudges (requires /admin/recent-nudges endpoint — see routes_patch.py)
+  const rn = await api('/admin/recent-nudges?limit=20');
+  const nudges = rn.nudges || [];
+  if (!nudges.length) {
+    document.getElementById('recent-nudges').innerHTML = '<div class="empty">No nudges yet — fire a webhook to generate the first one.</div>';
+    return;
+  }
+  let h = `<table>
+    <tr>
+      <th>Student</th>
+      <th>Type</th>
+      <th>Title</th>
+      <th>Message</th>
+      <th>Severity</th>
+      <th>Status</th>
+      <th>When</th>
+    </tr>`;
+  nudges.forEach(n => {
+    const sevClass = `sev-${n.severity}`;
+    h += `<tr class="${sevClass}">
+      <td><strong>${n.user_id}</strong></td>
+      <td>${(n.type||'').replace(/_/g,' ')}</td>
+      <td>${n.title}</td>
+      <td class="nudge-body" title="${n.body}">${n.body}</td>
+      <td>${sevPill(n.severity)}</td>
+      <td><span class="pill ${n.status==='pending'?'pill-warn':(n.status==='delivered'?'pill-blue':'pill-ok')}">${n.status}</span></td>
+      <td style="white-space:nowrap;color:#999">${ago(n.created_at)}</td>
+    </tr>`;
+  });
+  document.getElementById('recent-nudges').innerHTML = h + '</table>';
 }
 
 async function loadAttendance() {
   const c = document.getElementById('att-course').value;
   const b = document.getElementById('att-batch').value;
   const d = await api(`/reports/attendance?course_id=${c}&batch_id=${b}`);
-  if (!d.report?.length) { document.getElementById('attendance-table').innerHTML='<div class="empty">No data</div>'; return; }
+  if (!d.report?.length) { document.getElementById('attendance-table').innerHTML='<div class="empty">No data yet — mark attendance via webhook first.</div>'; return; }
   let h = '<table><tr><th>Student</th><th>Course</th><th>Attended</th><th>Total</th><th>%</th><th>Consec. Misses</th><th>Status</th></tr>';
   d.report.forEach(r => {
     const pill = r.status==='critical'?'pill-crit':(r.status==='warning'?'pill-warn':'pill-ok');
@@ -186,7 +241,7 @@ async function loadRecordings() {
   const c = document.getElementById('rec-course').value;
   const b = document.getElementById('rec-batch').value;
   const d = await api(`/reports/recordings?course_id=${c}&batch_id=${b}`);
-  if (!d.report?.length) { document.getElementById('recordings-table').innerHTML='<div class="empty">No data</div>'; return; }
+  if (!d.report?.length) { document.getElementById('recordings-table').innerHTML='<div class="empty">No recording data yet.</div>'; return; }
   let h = '<table><tr><th>Student</th><th>Lecture</th><th>Watch %</th><th>Completed</th><th>Overdue</th><th>Days Since Upload</th></tr>';
   d.report.forEach(r => {
     const cls = r.overdue ? 'pill-crit' : (r.completed ? 'pill-ok' : 'pill-warn');
@@ -202,7 +257,7 @@ async function loadCritical() {
   const d = await api(`/mentor/critical-students?batch_id=${b}`);
   const students = d.students || [];
   document.getElementById('risk-count').textContent = students.length;
-  if (!students.length) { document.getElementById('critical-table').innerHTML='<div class="empty">No at-risk students</div>'; return; }
+  if (!students.length) { document.getElementById('critical-table').innerHTML='<div class="empty">No at-risk students 🎉</div>'; return; }
   let h = '<table><tr><th>Student</th><th>Risk</th><th>Issue</th><th>Details</th></tr>';
   students.forEach(s => {
     const dot = s.risk==='critical'?'dot-critical':(s.risk==='high'?'dot-high':'dot-medium');
@@ -225,6 +280,7 @@ async function loadAnalytics() {
     <div class="card"><div class="label">Click Rate</div><div class="val amber">${((d.click_rate||0)*100).toFixed(1)}%</div></div>
   `;
   const types = d.by_type || {};
+  if (!Object.keys(types).length) { document.getElementById('analytics-types').innerHTML='<div class="empty">No data for this period.</div>'; return; }
   let h = '<table><tr><th>Nudge Type</th><th>Count</th></tr>';
   Object.entries(types).sort((a,b)=>b[1]-a[1]).forEach(([t,c]) => {
     h += `<tr><td>${t.replace(/_/g,' ')}</td><td><strong>${c}</strong></td></tr>`;
@@ -233,6 +289,8 @@ async function loadAnalytics() {
 }
 
 loadOverview();
+// Auto-refresh overview every 60 seconds
+setInterval(loadOverview, 60000);
 </script>
 </body>
 </html>

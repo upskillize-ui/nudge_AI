@@ -267,3 +267,27 @@ def train_dropout(_=Depends(verify_api), db: Session=Depends(get_db)):
     model.save_model(settings.dropout_model_path)
     return {"ok": True, "records": len(features), "accuracy": round(accuracy, 4),
             "model_path": settings.dropout_model_path}
+
+
+@ma.get("/admin/recent-nudges")
+def recent_nudges(limit: int = Query(20), _=Depends(verify_api), db: Session = Depends(get_db)):
+    """Admin endpoint: fetch latest nudges across ALL students (for dashboard display)."""
+    nudges = db.query(Nudge).order_by(Nudge.created_at.desc()).limit(limit).all()
+    return {
+        "nudges": [
+            {
+                "id": n.id,
+                "user_id": n.user_id,
+                "type": n.nudge_type,
+                "priority": n.priority,
+                "title": n.title,
+                "body": n.body,
+                "severity": n.severity,
+                "status": n.status,
+                "cta_text": n.cta_text or "",
+                "cta_url": n.cta_url or "",
+                "created_at": str(n.created_at),
+            }
+            for n in nudges
+        ]
+    }
