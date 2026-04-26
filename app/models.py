@@ -1,9 +1,24 @@
+"""
+PATCH NOTES (v2.1):
+- AttendanceTracker.last_lecture_id added — enables idempotent webhook
+  retries. process_attendance() now skips if same lecture_id already counted.
+
+REQUIRED MIGRATION (run once on Aiven MySQL):
+    ALTER TABLE nudge_attendance
+      ADD COLUMN last_lecture_id VARCHAR(100) DEFAULT '';
+
+If you let SQLAlchemy auto-create on a fresh DB, this happens automatically
+via init_db(). For an existing DB, run the ALTER above first.
+"""
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, Float, Text, JSON, Index
 from app.database import Base
 
-def uid(): return str(uuid.uuid4())
+
+def uid():
+    return str(uuid.uuid4())
+
 
 # ========== NUDGE STORAGE ==========
 class Nudge(Base):
@@ -19,7 +34,7 @@ class Nudge(Base):
     cta_text = Column(String(100), default="")
     cta_url = Column(String(500), default="")
     severity = Column(String(15), default="info")
-    metadata_json = Column(JSON, default=dict)
+    metadata_json = Column(JSON, default=lambda: {})
     status = Column(String(15), default="pending")
     scheduled_at = Column(DateTime, default=datetime.utcnow)
     delivered_at = Column(DateTime, nullable=True)
@@ -35,6 +50,7 @@ class Nudge(Base):
         Index("idx_n_sched", "scheduled_at"),
     )
 
+
 class NudgeEvent(Base):
     __tablename__ = "nudge_events"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -43,6 +59,7 @@ class NudgeEvent(Base):
     event_type = Column(String(20), nullable=False)
     channel = Column(String(20), default="in_app")
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 # ========== ATTENDANCE TRACKING ==========
 class AttendanceTracker(Base):
@@ -60,8 +77,12 @@ class AttendanceTracker(Base):
     last_missed_at = Column(DateTime, nullable=True)
     escalation_level = Column(Integer, default=0)
     last_nudge_at = Column(DateTime, nullable=True)
+    # NEW: idempotency key. If a webhook retries with the same lecture_id,
+    # process_attendance() returns early and does NOT increment counts.
+    last_lecture_id = Column(String(100), default="")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     __table_args__ = (Index("idx_att_uc", "user_id", "course_id", unique=True),)
+
 
 class RecordingTracker(Base):
     """Tracks who watched recorded lectures and who didn't."""
@@ -74,9 +95,9 @@ class RecordingTracker(Base):
     lecture_title = Column(String(300), default="")
     recording_url = Column(String(500), default="")
     uploaded_at = Column(DateTime, nullable=False)
-    expected_by = Column(DateTime, nullable=True)  # should watch by this date
-    watch_percent = Column(Integer, default=0)  # 0-100
-    completed = Column(Boolean, default=False)  # True if watch_percent >= 80
+    expected_by = Column(DateTime, nullable=True)
+    watch_percent = Column(Integer, default=0)
+    completed = Column(Boolean, default=False)
     first_watched_at = Column(DateTime, nullable=True)
     last_watched_at = Column(DateTime, nullable=True)
     reminder_count = Column(Integer, default=0)
@@ -86,6 +107,7 @@ class RecordingTracker(Base):
         Index("idx_rec_ul", "user_id", "lecture_id", unique=True),
         Index("idx_rec_unwatched", "completed", "expected_by"),
     )
+
 
 # ========== ASSIGNMENT TRACKING ==========
 class AssignmentTracker(Base):
@@ -109,6 +131,7 @@ class AssignmentTracker(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     __table_args__ = (Index("idx_asgn_ua", "user_id", "assignment_id", unique=True),)
 
+
 # ========== TOPIC PERFORMANCE ==========
 class TopicPerformance(Base):
     __tablename__ = "nudge_topics"
@@ -116,7 +139,7 @@ class TopicPerformance(Base):
     user_id = Column(String(100), nullable=False)
     course_id = Column(String(100), nullable=False)
     topic_name = Column(String(200), nullable=False)
-    scores_json = Column(JSON, default=list)
+    scores_json = Column(JSON, default=lambda: [])
     latest_score = Column(Float, nullable=True)
     attempt_count = Column(Integer, default=0)
     batch_average = Column(Float, nullable=True)
@@ -124,21 +147,24 @@ class TopicPerformance(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     __table_args__ = (Index("idx_tp_uct", "user_id", "course_id", "topic_name", unique=True),)
 
+
 # ========== DROPOUT FEATURES (for ML training) ==========
 class StudentFeatures(Base):
-    """Aggregated features for ML dropout prediction. Updated daily by cron."""
+    """Aggregated features for ML dropout prediction. Updated daily by cron
+    (engine.aggregate_features_daily). All fields are populated — none of
+    them stay at 0 forever."""
     __tablename__ = "nudge_student_features"
     user_id = Column(String(100), primary_key=True)
     course_id = Column(String(100), primary_key=True)
-    login_frequency = Column(Float, default=0)  # logins per week
+    login_frequency = Column(Float, default=0)
     avg_session_minutes = Column(Float, default=0)
-    score_trend = Column(Float, default=0)  # positive = improving
+    score_trend = Column(Float, default=0)
     consecutive_misses = Column(Integer, default=0)
     assignment_completion_rate = Column(Float, default=0)
     recording_completion_rate = Column(Float, default=0)
     days_since_last_login = Column(Integer, default=0)
     total_nudges_received = Column(Integer, default=0)
     nudge_response_rate = Column(Float, default=0)
-    dropped_out = Column(Boolean, nullable=True)  # NULL = still active, True/False = labeled
+    dropped_out = Column(Boolean, nullable=True)
     predicted_dropout_prob = Column(Float, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

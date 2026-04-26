@@ -1,7 +1,13 @@
 <!--
+  PATCH NOTES (v2.1):
+  - XSS fix: cta_url and id were interpolated into onclick="..." HTML attributes.
+    A nudge with cta_url="');alert(1)//" would execute JS. Now uses
+    data-id / data-url + addEventListener.
+  - URL safety: cta_url validated for same-origin / safe protocol before navigation.
+  - Click-vs-read: clicking the CTA now PATCHes status='clicked' (was: 'read').
+
   DROP-IN NOTIFICATION BELL FOR YOUR LMS
-  Add <div id="nudge-bell"></div> in your navbar
-  Then at page bottom add the script below with your user details
+  Add <div id="nudge-bell"></div> in your navbar, then the script below.
 -->
 <style>
 .nb{position:relative;display:inline-flex;cursor:pointer;padding:8px;border-radius:8px}
@@ -26,22 +32,178 @@
 .nb-empty{padding:30px;text-align:center;color:#bbb;font-size:13px}
 </style>
 <script>
-class NudgeBell{
-  constructor(o){this.el=document.querySelector(o.container||'#nudge-bell');this.api=o.apiBase;this.uid=o.userId;this.role=o.userRole||'student';this.poll=o.pollInterval||30000;this.nudges=[];this.count=0;this.open=false;this._t=null}
-  init(){this._render();this._fetch();this._startPoll();document.addEventListener('click',e=>{if(!this.el.contains(e.target))this._close()})}
-  _render(){this.el.innerHTML=`<div class="nb" id="nb-btn"><svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/></svg><span class="nb-badge hide" id="nb-b">0</span></div><div class="nb-panel" id="nb-p"><div class="nb-ph"><span>Notifications</span><button class="nb-ma" id="nb-ma">Mark all read</button></div><div class="nb-list" id="nb-l"></div></div>`;document.getElementById('nb-btn').onclick=e=>{e.stopPropagation();this.open=!this.open;document.getElementById('nb-p').classList.toggle('open',this.open);if(this.open)this._loadFeed()};document.getElementById('nb-ma').onclick=e=>{e.stopPropagation();this._markAll()}}
-  async _fetch(){try{const r=await fetch(`${this.api}/unread-count?user_id=${this.uid}&role=${this.role}`);const d=await r.json();this.count=d.total||0;const b=document.getElementById('nb-b');b.textContent=this.count>99?'99+':this.count;b.classList.toggle('hide',!this.count)}catch(e){}}
-  async _loadFeed(){try{const r=await fetch(`${this.api}/feed?user_id=${this.uid}&role=${this.role}&status=unread&limit=15`);const d=await r.json();this.nudges=d.nudges||[];this._renderList()}catch(e){}}
-  _renderList(){const l=document.getElementById('nb-l');if(!this.nudges.length){l.innerHTML='<div class="nb-empty">All caught up!</div>';return}l.innerHTML=this.nudges.map(n=>`<div class="nb-item ${['pending','delivered'].includes(n.status)?'unread':''}" onclick="window._nb._click('${n.id}','${n.cta_url||''}')"><div class="nb-dot ${n.severity}"></div><div style="flex:1;min-width:0"><div class="nb-title">${this._esc(n.title)}</div><div class="nb-body">${this._esc(n.body)}</div><div class="nb-time">${this._ago(n.created_at)}</div>${n.cta_text?`<button class="nb-cta">${this._esc(n.cta_text)}</button>`:''}</div></div>`).join('')}
-  async _click(id,url){try{await fetch(`${this.api}/${id}/status`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:url?'clicked':'read'})})}catch(e){}if(url&&url!=='')location.href=url;this._fetch();this._loadFeed()}
-  async _markAll(){try{await fetch(`${this.api}/batch-read?user_id=${this.uid}`,{method:'POST'})}catch(e){}this.count=0;document.getElementById('nb-b').classList.add('hide');this._loadFeed()}
-  _close(){this.open=false;document.getElementById('nb-p')?.classList.remove('open')}
-  _startPoll(){this._t=setInterval(()=>this._fetch(),this.poll)}
-  _ago(d){const s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return'now';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';return Math.floor(s/86400)+'d'}
-  _esc(t){if(!t)return'';const d=document.createElement('div');d.textContent=t;return d.innerHTML}
-  destroy(){clearInterval(this._t)}
+class NudgeBell {
+  constructor(o) {
+    this.el = document.querySelector(o.container || '#nudge-bell');
+    this.api = o.apiBase;
+    this.uid = o.userId;
+    this.role = o.userRole || 'student';
+    this.poll = o.pollInterval || 30000;
+    this.nudges = [];
+    this.count = 0;
+    this.open = false;
+    this._t = null;
+  }
+
+  init() {
+    this._render();
+    this._fetch();
+    this._startPoll();
+    document.addEventListener('click', (e) => { if (!this.el.contains(e.target)) this._close(); });
+    // Pause polling when tab is hidden
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this._fetch();
+    });
+  }
+
+  // Same-origin / relative / safe protocol guard
+  _safeUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    if (url.startsWith('/')) return true;
+    try {
+      const u = new URL(url, window.location.origin);
+      if (!['http:', 'https:'].includes(u.protocol)) return false;
+      return u.origin === window.location.origin;
+    } catch { return false; }
+  }
+
+  _render() {
+    this.el.innerHTML = `
+      <div class="nb" id="nb-btn">
+        <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/></svg>
+        <span class="nb-badge hide" id="nb-b" aria-live="polite">0</span>
+      </div>
+      <div class="nb-panel" id="nb-p">
+        <div class="nb-ph"><span>Notifications</span><button class="nb-ma" id="nb-ma">Mark all read</button></div>
+        <div class="nb-list" id="nb-l"></div>
+      </div>`;
+    document.getElementById('nb-btn').onclick = (e) => {
+      e.stopPropagation();
+      this.open = !this.open;
+      document.getElementById('nb-p').classList.toggle('open', this.open);
+      if (this.open) this._loadFeed();
+    };
+    document.getElementById('nb-ma').onclick = (e) => { e.stopPropagation(); this._markAll(); };
+  }
+
+  async _fetch() {
+    try {
+      const qs = new URLSearchParams({ user_id: this.uid, role: this.role });
+      const r = await fetch(`${this.api}/unread-count?${qs}`, { credentials: 'include' });
+      if (!r.ok) return;
+      const d = await r.json();
+      this.count = d.total || 0;
+      const b = document.getElementById('nb-b');
+      b.textContent = this.count > 99 ? '99+' : this.count;
+      b.classList.toggle('hide', !this.count);
+    } catch (e) { console.warn('[NudgeBell] fetch failed', e); }
+  }
+
+  async _loadFeed() {
+    try {
+      const qs = new URLSearchParams({ user_id: this.uid, role: this.role, status: 'unread', limit: '15' });
+      const r = await fetch(`${this.api}/feed?${qs}`, { credentials: 'include' });
+      if (!r.ok) throw new Error(r.status);
+      const d = await r.json();
+      this.nudges = d.nudges || [];
+      this._renderList();
+    } catch (e) { console.warn('[NudgeBell] feed failed', e); }
+  }
+
+  _renderList() {
+    const list = document.getElementById('nb-l');
+    if (!this.nudges.length) {
+      list.innerHTML = '<div class="nb-empty">All caught up!</div>';
+      return;
+    }
+    // Build items as DOM nodes (not innerHTML with interpolation) to avoid XSS
+    list.innerHTML = '';
+    for (const n of this.nudges) {
+      const item = document.createElement('div');
+      item.className = `nb-item ${['pending','delivered'].includes(n.status) ? 'unread' : ''}`;
+      item.dataset.id = n.id;
+      item.dataset.url = n.cta_url || '';
+
+      const dot = document.createElement('div');
+      dot.className = `nb-dot ${n.severity || 'info'}`;
+      item.appendChild(dot);
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'flex:1;min-width:0';
+
+      const t = document.createElement('div'); t.className = 'nb-title'; t.textContent = n.title || '';
+      const b = document.createElement('div'); b.className = 'nb-body'; b.textContent = n.body || '';
+      const tm = document.createElement('div'); tm.className = 'nb-time'; tm.textContent = this._ago(n.created_at);
+      wrap.appendChild(t); wrap.appendChild(b); wrap.appendChild(tm);
+
+      if (n.cta_text) {
+        const cta = document.createElement('button');
+        cta.className = 'nb-cta';
+        cta.textContent = n.cta_text;
+        cta.dataset.url = n.cta_url || '';
+        cta.dataset.id = n.id;
+        cta.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._click(n.id, n.cta_url, 'clicked');
+        });
+        wrap.appendChild(cta);
+      }
+      item.appendChild(wrap);
+      item.addEventListener('click', () => this._click(n.id, n.cta_url, 'read'));
+      list.appendChild(item);
+    }
+  }
+
+  async _click(id, url, status) {
+    try {
+      await fetch(`${this.api}/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status }),
+      });
+    } catch (e) { console.warn('[NudgeBell] mark status failed', e); }
+    if (url && this._safeUrl(url)) {
+      window.location.href = url;
+      return;
+    }
+    this._fetch();
+    this._loadFeed();
+  }
+
+  async _markAll() {
+    try {
+      const qs = new URLSearchParams({ user_id: this.uid });
+      await fetch(`${this.api}/batch-read?${qs}`, { method: 'POST', credentials: 'include' });
+    } catch (e) { console.warn('[NudgeBell] markAll failed', e); }
+    this.count = 0;
+    document.getElementById('nb-b').classList.add('hide');
+    this._loadFeed();
+  }
+
+  _close() {
+    this.open = false;
+    document.getElementById('nb-p')?.classList.remove('open');
+  }
+
+  _startPoll() {
+    this._t = setInterval(() => { if (!document.hidden) this._fetch(); }, this.poll);
+  }
+
+  _ago(d) {
+    const ms = Date.now() - new Date(d).getTime();
+    if (Number.isNaN(ms)) return '';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return 'now';
+    if (s < 3600) return Math.floor(s / 60) + 'm';
+    if (s < 86400) return Math.floor(s / 3600) + 'h';
+    return Math.floor(s / 86400) + 'd';
+  }
+
+  destroy() { clearInterval(this._t); }
 }
-window._nb=null;
+window._nb = null;
+
 // USAGE: Paste at bottom of your page after login:
 // <script>
 // window._nb = new NudgeBell({

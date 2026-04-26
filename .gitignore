@@ -3,3 +3,7 @@ __pycache__/
 .env
 *.log
 models/*.json
+
+# Local backups
+_backup_v2/
+migrate.py
