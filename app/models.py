@@ -1,14 +1,24 @@
 """
-PATCH NOTES (v2.1):
-- AttendanceTracker.last_lecture_id added — enables idempotent webhook
-  retries. process_attendance() now skips if same lecture_id already counted.
+PATCH NOTES (v2.2):
+- RecordingTracker.mentor_id — the real mentor for the batch, so overdue-
+  recording alerts reach a person instead of a synthesised "mentor_{batch}".
+- StudentFeatures.last_login_at — the actual last login. days_since_last_login
+  is now derived from this rather than being overwritten nightly from
+  attendance activity.
 
-REQUIRED MIGRATION (run once on Aiven MySQL):
+PATCH NOTES (v2.1):
+- AttendanceTracker.last_lecture_id — idempotent webhook retries.
+
+REQUIRED MIGRATION (run once on Aiven MySQL, see sql/002_v22.sql):
     ALTER TABLE nudge_attendance
       ADD COLUMN last_lecture_id VARCHAR(100) DEFAULT '';
+    ALTER TABLE nudge_recordings
+      ADD COLUMN mentor_id VARCHAR(100) DEFAULT '';
+    ALTER TABLE nudge_student_features
+      ADD COLUMN last_login_at DATETIME NULL;
 
-If you let SQLAlchemy auto-create on a fresh DB, this happens automatically
-via init_db(). For an existing DB, run the ALTER above first.
+On a fresh DB init_db() creates these automatically. On an existing DB run
+the ALTERs first.
 """
 import uuid
 from datetime import datetime
@@ -94,6 +104,9 @@ class RecordingTracker(Base):
     batch_id = Column(String(100), default="")
     lecture_title = Column(String(300), default="")
     recording_url = Column(String(500), default="")
+    # Real mentor for this batch. Empty means "unknown" — alerts are skipped
+    # rather than sent to a synthesised recipient nobody reads.
+    mentor_id = Column(String(100), default="")
     uploaded_at = Column(DateTime, nullable=False)
     expected_by = Column(DateTime, nullable=True)
     watch_percent = Column(Integer, default=0)
@@ -163,6 +176,7 @@ class StudentFeatures(Base):
     assignment_completion_rate = Column(Float, default=0)
     recording_completion_rate = Column(Float, default=0)
     days_since_last_login = Column(Integer, default=0)
+    last_login_at = Column(DateTime, nullable=True)
     total_nudges_received = Column(Integer, default=0)
     nudge_response_rate = Column(Float, default=0)
     dropped_out = Column(Boolean, nullable=True)

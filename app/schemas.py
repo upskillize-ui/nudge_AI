@@ -28,6 +28,7 @@ class RecordingUploadEvent(BaseModel):
     uploaded_at: str = ""
     expected_by: str = ""
     student_ids: List[str] = []
+    mentor_id: str = ""  # real mentor — without it, pile-up alerts are skipped
 
 
 class RecordingWatchEvent(BaseModel):
@@ -83,7 +84,8 @@ class ManualNudgeRequest(BaseModel):
     title: str
     body: str
     priority: str = "medium"
-    severity: str = "info"  # NEW: was hardcoded server-side
+    severity: str = "info"
+    role: str = "student"  # "student" or "mentor" — was hardcoded server-side
     nudge_type: str = "custom"
     cta_text: str = ""
     cta_url: str = ""
