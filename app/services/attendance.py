@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import AttendanceTracker, Nudge
 from app.services.messages import MENTOR, MISS, get_msg
 from app.services.nudges import NudgeService
+from app.services.streaks import StreakService
 
 log = logging.getLogger("services.attendance")
 
@@ -54,6 +55,7 @@ class AttendanceService:
     def __init__(self, db: Session):
         self.db = db
         self.nudges = NudgeService(db)
+        self.streaks = StreakService(db)
 
     def process(
         self,
@@ -87,7 +89,10 @@ class AttendanceService:
 
         if attended:
             self._record_present(tracker)
+            # A miss resets the streak silently; a milestone celebrates.
+            self.streaks.record(user_id, course_id, True, lecture_title)
             return None
+        self.streaks.record(user_id, course_id, False, lecture_title)
         return self._record_absent(
             tracker, batch_id, lecture_title, mentor_id, student_name, course_id
         )
@@ -166,8 +171,9 @@ class AttendanceService:
             title=message["title"], body=message["body"],
             severity=message["severity"], priority=rung["priority"],
             cta_text=message["cta"], cta_url=f"/courses/{course_id}/recordings",
-            meta={"misses": misses, "course_id": course_id, "pct": attended_pct},
-            escalation=tracker.escalation_level,
+            meta={"misses": misses, "course_id": course_id, "pct": attended_pct,
+                  "course": lecture_title},
+            escalation=rung["template_key"],
         )
 
         if rung["alert_mentor"] and mentor_id:

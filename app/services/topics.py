@@ -6,10 +6,28 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models import Nudge, TopicPerformance
-from app.services.messages import MENTOR, TOPIC, get_msg
+from app.services.messages import MENTOR, SCORE, TOPIC, get_msg
 from app.services.nudges import NudgeService
 
 log = logging.getLogger("services.topics")
+
+#: Score bands, most demanding first. The first band whose `min_score` is met
+#: wins. Note the deliberate gap: 50-84 has NO band, because a student who
+#: scored 71 does not need a notification about it. Silence is a feature —
+#: nudging every result is how the bell becomes noise.
+SCORE_BANDS = [
+    {"min_score": 95, "key": "exceptional", "severity": "success",
+     "priority": "low", "nudge_type": "score_exceptional", "alert_mentor": False},
+    {"min_score": 85, "key": "strong", "severity": "success",
+     "priority": "low", "nudge_type": "score_strong", "alert_mentor": False},
+    {"min_score": 35, "key": "low", "severity": "warning",
+     "priority": "medium", "nudge_type": "topic_improvement", "alert_mentor": False},
+    {"min_score": 0, "key": "repeated", "severity": "warning",
+     "priority": "high", "nudge_type": "score_critical", "alert_mentor": True},
+]
+
+#: Scores inside this range send nothing at all.
+SILENT_BAND = (50, 84)
 
 #: Score at or above which a topic counts as understood.
 PASS_MARK = 50
@@ -48,6 +66,25 @@ def trend_for(previous: Optional[float], current: float) -> str:
     return "flat"
 
 
+def band_for(score: float) -> Optional[dict]:
+    """The score band a result falls into, or None when it should be silent.
+
+    Pure function — unit-testable without a database.
+
+    Args:
+        score: percentage, 0-100.
+
+    Returns:
+        The band dict, or None for anything in the silent 50-84 range.
+    """
+    if SILENT_BAND[0] <= score <= SILENT_BAND[1]:
+        return None
+    for band in SCORE_BANDS:
+        if score >= band["min_score"]:
+            return band
+    return None
+
+
 class TopicService:
     """Records quiz scores and coaches on weak topics."""
 
@@ -80,12 +117,19 @@ class TopicService:
             "attempts": performance.attempt_count, "old": round(previous or 0),
         }
 
+        # A comeback outranks the band: 31 -> 58 is progress, not "needs work".
         if previous is not None and score >= previous + CELEBRATION_DELTA:
             return self._celebrate(user_id, context)
-        if score < PASS_MARK:
-            return self._coach(performance, user_id, context, batch_average,
-                               score, mentor_id, student_name or user_id)
-        return None
+
+        band = band_for(score)
+        if not band:
+            return None      # 50-84: deliberately silent
+
+        if band["key"] in ("exceptional", "strong"):
+            return self._praise(user_id, band, context, score, batch_average)
+
+        return self._coach(performance, user_id, context, batch_average,
+                           score, mentor_id, student_name or user_id)
 
     def _get_or_create(
         self, user_id: str, course_id: str, topic_name: str
@@ -128,6 +172,22 @@ class TopicService:
             user_id=user_id, role="student", nudge_type="topic_improvement",
             title=message["title"], body=message["body"],
             severity="success", priority="low", cta_text=message["cta"],
+        )
+
+    def _praise(
+        self, user_id: str, band: Dict, context: Dict,
+        score: float, batch_average: Optional[float],
+    ) -> Optional[Nudge]:
+        """Recognise a high score by naming the number, not the person."""
+        delta = round(score - batch_average) if batch_average else 0
+        message = get_msg(SCORE, band["key"], {**context, "delta": delta})
+        return self.nudges.create(
+            user_id=user_id, role="student", nudge_type=band["nudge_type"],
+            title=message["title"], body=message["body"],
+            severity=band["severity"], priority=band["priority"],
+            cta_text=message["cta"],
+            meta={"score": round(score), "topic": context.get("topic", ""),
+                  "band": band["key"]},
         )
 
     def _coach(

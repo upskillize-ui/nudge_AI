@@ -80,6 +80,16 @@ class NudgeService:
         self.db.add(nudge)
         self.db.commit()
         self.db.refresh(nudge)
+
+        # Decide extra channels. The dashboard is implicit — this row IS the
+        # dashboard nudge. Email and WhatsApp are queued for the LMS to send.
+        # Imported here to keep the module import graph acyclic.
+        from app.services.delivery import DeliveryService
+        try:
+            DeliveryService(self.db).route(nudge, level=escalation)
+        except Exception as exc:  # noqa: BLE001 — routing must never lose a nudge
+            log.error("Channel routing failed for %s: %s", nudge.id, exc)
+
         log.info("Nudge: %s -> %s [%s]", nudge_type, user_id, priority)
         return nudge
 

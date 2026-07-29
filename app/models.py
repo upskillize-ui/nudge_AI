@@ -53,6 +53,16 @@ class Nudge(Base):
     dismissed_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     escalation_level = Column(Integer, default=0)
+    # Which copy variant produced this nudge. Without it the template A/B is
+    # run and the results discarded.
+    template_id = Column(String(60), default="")
+    # Per-channel delivery state. `channel` stays for backwards compatibility;
+    # these record what actually went out.
+    email_status = Column(String(15), default="none")     # none|queued|sent|failed|skipped
+    email_sent_at = Column(DateTime, nullable=True)
+    whatsapp_status = Column(String(15), default="none")
+    whatsapp_sent_at = Column(DateTime, nullable=True)
+    whatsapp_template = Column(String(60), default="")
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (
         Index("idx_n_user_status", "user_id", "status"),
@@ -181,4 +191,101 @@ class StudentFeatures(Base):
     nudge_response_rate = Column(Float, default=0)
     dropped_out = Column(Boolean, nullable=True)
     predicted_dropout_prob = Column(Float, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# ========== CONTACTS & CONSENT ==========
+class Contact(Base):
+    """Where a person can be reached, and whether they agreed to it.
+
+    Consent is stored per channel and defaults to False for anything outside
+    the app. In-app needs no consent; email and WhatsApp do.
+    """
+    __tablename__ = "nudge_contacts"
+    user_id = Column(String(100), primary_key=True)
+    full_name = Column(String(200), default="")
+    email = Column(String(200), default="")
+    phone_e164 = Column(String(20), default="")
+    email_opt_in = Column(Boolean, default=False)
+    whatsapp_opt_in = Column(Boolean, default=False)
+    quiet_hours_start = Column(Integer, nullable=True)
+    quiet_hours_end = Column(Integer, nullable=True)
+    unsubscribed_all = Column(Boolean, default=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ========== SCHEDULED CLASSES (for 60/30/15-minute reminders) ==========
+class ScheduledClass(Base):
+    """A class that is going to happen, so it can be reminded about.
+
+    The agent previously only learned a lecture existed once attendance was
+    marked — i.e. after it had started. This is the timetable.
+    """
+    __tablename__ = "nudge_scheduled_classes"
+    id = Column(String(36), primary_key=True, default=uid)
+    class_id = Column(String(100), nullable=False)
+    course_id = Column(String(100), nullable=False)
+    batch_id = Column(String(100), default="")
+    title = Column(String(300), default="")
+    starts_at = Column(DateTime, nullable=False)
+    duration_minutes = Column(Integer, default=60)
+    join_url = Column(String(500), default="")
+    mentor_id = Column(String(100), default="")
+    student_ids = Column(JSON, default=lambda: [])
+    # Highest reminder tier already sent: 0 none, 60, 30, 15.
+    reminded_at_tier = Column(Integer, default=0)
+    cancelled = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (
+        Index("idx_sched_unique", "class_id", unique=True),
+        Index("idx_sched_upcoming", "starts_at", "cancelled"),
+    )
+
+
+# ========== ABANDONED ACTIVITY ATTEMPTS ==========
+class ActivityAttempt(Base):
+    """Anything a student started and may not have finished.
+
+    Covers tests, assessments, psychometrics, mock interviews, pulse quizzes,
+    capstone drafts, moonshot days and profile completion — one table, keyed by
+    activity_type, rather than one tracker per feature.
+    """
+    __tablename__ = "nudge_activity_attempts"
+    id = Column(String(36), primary_key=True, default=uid)
+    user_id = Column(String(100), nullable=False)
+    course_id = Column(String(100), default="")
+    activity_type = Column(String(40), nullable=False)
+    activity_id = Column(String(100), nullable=False)
+    activity_name = Column(String(300), default="")
+    steps_done = Column(Integer, default=0)
+    steps_total = Column(Integer, default=0)
+    progress_percent = Column(Integer, default=0)
+    resume_url = Column(String(500), default="")
+    started_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+    completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime, nullable=True)
+    # Highest abandonment stage already nudged: 0 none, 1, 2, 3, 4.
+    reminded_stage = Column(Integer, default=0)
+    last_reminded_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (
+        Index("idx_attempt_unique", "user_id", "activity_type", "activity_id", unique=True),
+        Index("idx_attempt_open", "completed", "last_seen_at"),
+    )
+
+
+# ========== STREAKS ==========
+class Streak(Base):
+    """Consecutive-attendance streaks, per student per course."""
+    __tablename__ = "nudge_streaks"
+    user_id = Column(String(100), primary_key=True)
+    course_id = Column(String(100), primary_key=True)
+    current_classes = Column(Integer, default=0)
+    longest_classes = Column(Integer, default=0)
+    streak_started_at = Column(DateTime, nullable=True)
+    last_attended_at = Column(DateTime, nullable=True)
+    # Highest milestone already celebrated, so a 30-day streak is not
+    # congratulated every single class.
+    last_milestone = Column(Integer, default=0)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

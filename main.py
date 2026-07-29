@@ -27,7 +27,7 @@ settings = get_settings()
 templates = Jinja2Templates(directory="templates")
 STARTED_AT = time.time()
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 API_PREFIX = "/api/v1"
 
 #: Fallback CORS origins when ALLOWED_ORIGINS_RAW is unset. A wildcard is

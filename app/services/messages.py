@@ -77,6 +77,51 @@ TOPIC = {
                   "severity": "success", "cta": "Keep Going"}],
 }
 
+CLASS_REMINDER = {
+    60: [{"title": "{topic} starts in an hour",
+          "body": "Today's session covers {topic}. The joining link is ready when you are.",
+          "severity": "info", "cta": "View class"}],
+    30: [{"title": "{topic} starts in 30 minutes",
+          "body": "Good time to open your notes from last session.",
+          "severity": "info", "cta": "Join class"}],
+    15: [{"title": "Class starts in 15 minutes",
+          "body": "{topic} is about to begin.",
+          "severity": "info", "cta": "Join now"}],
+}
+
+ABANDONED = {
+    1: [{"title": "You stopped {done} of {total} through {activity}",
+         "body": "Your progress is saved. About {minutes} minutes of work left.",
+         "severity": "info", "cta": "Resume"}],
+    2: [{"title": "{activity} is {pct}% complete",
+         "body": "Picking it up now is easier than starting again tomorrow.",
+         "severity": "info", "cta": "Resume"}],
+    3: [{"title": "{activity} has been open since {when}",
+         "body": "You are {pct}% through. Finishing takes about {minutes} minutes.",
+         "severity": "warning", "cta": "Finish it"}],
+    4: [{"title": "{activity} closes in {hours} hours",
+         "body": "You are {pct}% through and your answers are saved.",
+         "severity": "critical", "cta": "Finish now"}],
+}
+
+STREAK = {
+    "week": [{"title": "{count} classes, no gaps",
+              "body": "A full week of attendance in {course}. Keep it through Friday.",
+              "severity": "success", "cta": "View attendance"}],
+    "month": [{"title": "A month without missing a class",
+               "body": "{count} sessions in {course}, attendance at {pct}%. That is placement-eligible territory.",
+               "severity": "success", "cta": "View attendance"}],
+}
+
+SCORE = {
+    "exceptional": [{"title": "{score}% on {topic}",
+                     "body": "{delta} points above the batch average. That is the hardest material in the module.",
+                     "severity": "success", "cta": "See breakdown"}],
+    "strong": [{"title": "{score}% on {topic}",
+                "body": "Comfortably above the pass mark. Onwards.",
+                "severity": "success", "cta": "See breakdown"}],
+}
+
 MENTOR = {
     "miss": [{"title": "\u26A0 Student missing classes",
               "body": "CRITICAL: {student} ({batch}) missed {misses} classes in a row. Last active: {last_active}. Reach out?",

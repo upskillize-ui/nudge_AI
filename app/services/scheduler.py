@@ -15,9 +15,11 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Nudge
+from app.services.activities import ActivityService
 from app.services.assignments import AssignmentService
 from app.services.dropout import DropoutService
 from app.services.recordings import RecordingService
+from app.services.sessions import SessionService
 
 log = logging.getLogger("scheduler")
 scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
@@ -27,6 +29,13 @@ FEATURE_AGGREGATION_HOUR = 2
 
 #: How often overdue recordings are swept, in minutes.
 RECORDING_SWEEP_MINUTES = 30
+
+#: How often upcoming classes are checked. Must be well under the tightest
+#: reminder tier (15 minutes) or the tier is missed entirely.
+CLASS_REMINDER_MINUTES = 5
+
+#: How often abandoned attempts are swept.
+ACTIVITY_SWEEP_MINUTES = 15
 
 #: How often expired pending nudges are retired, in hours.
 EXPIRY_SWEEP_HOURS = 1
@@ -66,6 +75,16 @@ def check_deadlines() -> None:
 def check_recordings() -> None:
     """Chase students who have not watched overdue recordings."""
     _run("recordings", lambda db: RecordingService(db).check_unwatched())
+
+
+def send_class_reminders() -> None:
+    """Remind students about classes starting in 60 / 30 / 15 minutes."""
+    _run("class_reminders", lambda db: SessionService(db).send_reminders())
+
+
+def sweep_abandoned() -> None:
+    """Chase activities a student started and left unfinished."""
+    _run("abandoned", lambda db: ActivityService(db).sweep())
 
 
 def aggregate_features() -> None:
@@ -113,6 +132,16 @@ def start_scheduler() -> None:
         id="recordings", replace_existing=True,
     )
     scheduler.add_job(
+        send_class_reminders,
+        IntervalTrigger(minutes=CLASS_REMINDER_MINUTES),
+        id="class_reminders", replace_existing=True,
+    )
+    scheduler.add_job(
+        sweep_abandoned,
+        IntervalTrigger(minutes=ACTIVITY_SWEEP_MINUTES),
+        id="abandoned", replace_existing=True,
+    )
+    scheduler.add_job(
         aggregate_features,
         CronTrigger(hour=FEATURE_AGGREGATION_HOUR, minute=0),
         id="agg_features", replace_existing=True,
@@ -131,9 +160,10 @@ def start_scheduler() -> None:
 
     scheduler.start()
     log.info(
-        "Scheduler started: deadlines/%dm, recordings/%dm, features daily %02d:00 IST",
+        "Scheduler started: deadlines/%dm, recordings/%dm, classes/%dm, "
+        "abandoned/%dm, features daily %02d:00 IST",
         settings.nudge_check_interval_minutes, RECORDING_SWEEP_MINUTES,
-        FEATURE_AGGREGATION_HOUR,
+        CLASS_REMINDER_MINUTES, ACTIVITY_SWEEP_MINUTES, FEATURE_AGGREGATION_HOUR,
     )
 
 

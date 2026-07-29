@@ -14,7 +14,11 @@ from app.models import Nudge, StudentFeatures
 from app.routes.dependencies import verify_api
 from app.schemas import ManualNudgeRequest
 from app.services.assignments import AssignmentService
+from app.services.activities import ActivityService
+from app.services.delivery import DeliveryService
 from app.services.dropout import FEATURE_COLUMNS, DropoutService
+from app.services.sessions import SessionService
+from app.services.streaks import StreakService
 from app.services.nudges import NudgeService
 from app.services.recordings import RecordingService
 from app.services.reports import ReportService
@@ -199,3 +203,62 @@ def train_dropout(db: Session = Depends(get_db)):
         "accuracy": round(accuracy, 4),
         "model_path": settings.dropout_model_path,
     }
+
+
+# ============ DELIVERY OUTBOX ============
+# The agent decides channels; the LMS sends. It already owns the WhatsApp
+# Business number and the SMTP credentials, so duplicating either here would
+# mean a second set of secrets and a second sender reputation to manage.
+
+@router.get("/outbox/{channel}")
+def outbox(channel: str, limit: int = Query(50, le=200), db: Session = Depends(get_db)):
+    """Queued messages for the LMS to send.
+
+    Args:
+        channel: "email" or "whatsapp".
+    """
+    if channel not in ("email", "whatsapp"):
+        raise HTTPException(400, "channel must be email or whatsapp")
+    return {"channel": channel, "items": DeliveryService(db).outbox(channel, limit)}
+
+
+@router.post("/outbox/{channel}/{nudge_id}/sent")
+def mark_sent(
+    channel: str, nudge_id: str,
+    ok: bool = Query(True),
+    db: Session = Depends(get_db),
+):
+    """Record the outcome of a send so it is never attempted twice."""
+    if channel not in ("email", "whatsapp"):
+        raise HTTPException(400, "channel must be email or whatsapp")
+    if not DeliveryService(db).mark_sent(nudge_id, channel, ok):
+        raise HTTPException(404, "nudge not found")
+    return {"ok": True}
+
+
+# ============ NEW VIEWS ============
+
+@router.get("/student/open-activities")
+def open_activities(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """Everything this student started and has not finished."""
+    return {"activities": ActivityService(db).open_for_student(user_id)}
+
+
+@router.get("/mentor/streaks")
+def streaks(
+    course_id: str = Query(""),
+    limit: int = Query(20, le=100),
+    db: Session = Depends(get_db),
+):
+    """Longest current attendance streaks."""
+    return {"streaks": StreakService(db).leaderboard(course_id, limit)}
+
+
+@router.get("/admin/upcoming-classes")
+def upcoming_classes(
+    course_id: str = Query(""),
+    limit: int = Query(50, le=200),
+    db: Session = Depends(get_db),
+):
+    """Scheduled classes still to come, with their reminder state."""
+    return {"classes": SessionService(db).upcoming(course_id, limit)}

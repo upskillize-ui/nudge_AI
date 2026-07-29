@@ -167,7 +167,12 @@ class AssignmentService:
             title=message["title"], body=message["body"],
             severity=message["severity"], priority=stage["priority"],
             cta_text=message["cta"], cta_url=f"/assignments/{tracker.assignment_id}",
-            meta={"assignment_id": tracker.assignment_id, "hours_left": round(hours_left)},
+            meta={"assignment_id": tracker.assignment_id, "title": tracker.title,
+                  "hours": round(hours_left), "hours_left": round(hours_left),
+                  "url": f"/assignments/{tracker.assignment_id}"},
+            # Routing level = the stage's hour threshold, so 6h can reach
+            # WhatsApp while 72h stays on the dashboard.
+            escalation=stage.get("max_hours_left", 0),
         )
         if nudge:
             tracker.reminder_count = (tracker.reminder_count or 0) + 1

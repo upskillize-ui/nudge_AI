@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     # CORS allow-list (comma-separated string in env, parsed below)
     allowed_origins_raw: str = ""
 
+    # Copy generation. OFF by default: templates handle ~95% of nudges at zero
+    # cost, and AI is only worth spending on the handful of cases listed in
+    # services/copy.AI_ELIGIBLE_TYPES.
+    enable_ai_copy: bool = False
+    ai_copy_model: str = "claude-haiku-4-5"
+
     # AI/ML settings
     enable_dropout_prediction: bool = False
     dropout_model_path: str = "models/dropout_model.json"

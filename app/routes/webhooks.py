@@ -12,13 +12,19 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import StudentFeatures
 from app.routes.dependencies import error_response, verify_webhook
-from app.schemas import (AssignmentSubmitEvent, AssignmentUploadEvent,
-                         AssignmentViewEvent, LectureAttendanceEvent,
+from app.schemas import (ActivityCompletedEvent, ActivityProgressEvent,
+                         ActivityStartedEvent, AssignmentSubmitEvent,
+                         AssignmentUploadEvent, AssignmentViewEvent,
+                         ClassCancelledEvent, ClassScheduledEvent,
+                         ContactUpsertEvent, LectureAttendanceEvent,
                          LoginEvent, QuizScoreEvent, RecordingUploadEvent,
                          RecordingWatchEvent)
+from app.services.activities import ActivityService
 from app.services.assignments import AssignmentService
 from app.services.attendance import AttendanceService
+from app.services.delivery import DeliveryService
 from app.services.recordings import RecordingService
+from app.services.sessions import SessionService
 from app.services.topics import TopicService
 
 log = logging.getLogger("routes.webhooks")
@@ -163,3 +169,101 @@ def login(event: LoginEvent, db: Session = Depends(get_db)):
         log.error("Login webhook failed: %s", exc)
         db.rollback()
         return error_response("login_failed", "Could not record login")
+
+
+# ============ SCHEDULED CLASSES ============
+
+@router.post("/class-scheduled")
+def class_scheduled(event: ClassScheduledEvent, db: Session = Depends(get_db)):
+    """Register a class so 60/30/15-minute reminders can fire."""
+    try:
+        scheduled = SessionService(db).schedule(
+            class_id=event.class_id, course_id=event.course_id,
+            starts_at=event.starts_at, batch_id=event.batch_id,
+            title=event.title, duration_minutes=event.duration_minutes,
+            join_url=event.join_url, mentor_id=event.mentor_id,
+            student_ids=event.student_ids,
+        )
+        return {"ok": bool(scheduled), "students": len(event.student_ids)}
+    except Exception as exc:  # noqa: BLE001
+        log.error("Class scheduled webhook failed: %s", exc)
+        db.rollback()
+        return error_response("class_schedule_failed", "Could not schedule class")
+
+
+@router.post("/class-cancelled")
+def class_cancelled(event: ClassCancelledEvent, db: Session = Depends(get_db)):
+    """Stop reminders for a cancelled class."""
+    try:
+        return {"ok": SessionService(db).cancel(event.class_id)}
+    except Exception as exc:  # noqa: BLE001
+        log.error("Class cancelled webhook failed: %s", exc)
+        db.rollback()
+        return error_response("class_cancel_failed", "Could not cancel class")
+
+
+# ============ ACTIVITY LIFECYCLE (abandonment) ============
+
+@router.post("/activity-started")
+def activity_started(event: ActivityStartedEvent, db: Session = Depends(get_db)):
+    """Open an attempt so it can be detected as abandoned."""
+    try:
+        ActivityService(db).start(
+            user_id=event.user_id, activity_type=event.activity_type,
+            activity_id=event.activity_id, course_id=event.course_id,
+            activity_name=event.activity_name, steps_total=event.steps_total,
+            resume_url=event.resume_url, expires_at=event.expires_at,
+        )
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001
+        log.error("Activity started webhook failed: %s", exc)
+        db.rollback()
+        return error_response("activity_start_failed", "Could not record activity start")
+
+
+@router.post("/activity-progress")
+def activity_progress(event: ActivityProgressEvent, db: Session = Depends(get_db)):
+    """Heartbeat — keeps the attempt alive and records progress."""
+    try:
+        ActivityService(db).progress(
+            user_id=event.user_id, activity_type=event.activity_type,
+            activity_id=event.activity_id, steps_done=event.steps_done,
+            progress_percent=event.progress_percent,
+        )
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001
+        log.error("Activity progress webhook failed: %s", exc)
+        db.rollback()
+        return error_response("activity_progress_failed", "Could not record progress")
+
+
+@router.post("/activity-completed")
+def activity_completed(event: ActivityCompletedEvent, db: Session = Depends(get_db)):
+    """Close the attempt. No further reminders."""
+    try:
+        ActivityService(db).complete(
+            event.user_id, event.activity_type, event.activity_id
+        )
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001
+        log.error("Activity completed webhook failed: %s", exc)
+        db.rollback()
+        return error_response("activity_complete_failed", "Could not record completion")
+
+
+# ============ CONTACTS & CONSENT ============
+
+@router.post("/contact")
+def upsert_contact(event: ContactUpsertEvent, db: Session = Depends(get_db)):
+    """Store where someone can be reached, and what they consented to.
+
+    Consent defaults to False for every channel outside the app. Without a
+    contact row, email and WhatsApp are skipped — never assumed.
+    """
+    try:
+        DeliveryService(db).upsert_contact(**event.model_dump())
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001
+        log.error("Contact webhook failed: %s", exc)
+        db.rollback()
+        return error_response("contact_failed", "Could not store contact")

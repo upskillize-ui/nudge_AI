@@ -95,3 +95,56 @@ class LoginEvent(BaseModel):
     user_id: str
     course_id: str = ""
     session_minutes: float = 0
+
+# ===== SCHEDULED CLASSES (for 60/30/15-minute reminders) =====
+class ClassScheduledEvent(BaseModel):
+    class_id: str
+    course_id: str
+    batch_id: str = ""
+    title: str = ""
+    starts_at: str                 # ISO 8601
+    duration_minutes: int = 60
+    join_url: str = ""
+    mentor_id: str = ""
+    student_ids: List[str] = []
+
+
+class ClassCancelledEvent(BaseModel):
+    class_id: str
+
+
+# ===== ACTIVITY LIFECYCLE (abandonment tracking) =====
+class ActivityStartedEvent(BaseModel):
+    user_id: str
+    course_id: str = ""
+    activity_type: str             # test | assessment | psychometric | mock_interview | ...
+    activity_id: str
+    activity_name: str = ""
+    steps_total: int = 0
+    resume_url: str = ""
+    expires_at: str = ""
+
+
+class ActivityProgressEvent(BaseModel):
+    user_id: str
+    activity_type: str
+    activity_id: str
+    steps_done: int = 0
+    progress_percent: int = 0
+
+
+class ActivityCompletedEvent(BaseModel):
+    user_id: str
+    activity_type: str
+    activity_id: str
+
+
+# ===== CONTACTS & CONSENT =====
+class ContactUpsertEvent(BaseModel):
+    user_id: str
+    full_name: str = ""
+    email: str = ""
+    phone_e164: str = ""
+    email_opt_in: bool = False
+    whatsapp_opt_in: bool = False
+    unsubscribed_all: bool = False
