@@ -30,9 +30,10 @@ FEATURE_AGGREGATION_HOUR = 2
 #: How often overdue recordings are swept, in minutes.
 RECORDING_SWEEP_MINUTES = 30
 
-#: How often upcoming classes are checked. Must be well under the tightest
-#: reminder tier (15 minutes) or the tier is missed entirely.
-CLASS_REMINDER_MINUTES = 5
+#: How often upcoming classes are checked. Two minutes, so even a class
+#: scheduled 8 minutes before start is noticed in time for its one reminder —
+#: worst case: registered at T-8, seen by T-6, reminded well before T.
+CLASS_REMINDER_MINUTES = 2
 
 #: How often abandoned attempts are swept.
 ACTIVITY_SWEEP_MINUTES = 15

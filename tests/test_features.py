@@ -66,8 +66,14 @@ class TestClassReminderTiers:
     def test_too_far_out(self):
         assert tier_for(120, 0) is None
 
-    def test_already_started(self):
-        assert tier_for(0.5, 0) is None
+    def test_already_started_gets_grace_when_nothing_was_sent(self):
+        # Superseded rule: this used to assert silence. The at-least-one
+        # guarantee now sends "you can still join" instead.
+        got = tier_for(0.5, 0)
+        assert got is not None and got["minutes"] == 0
+
+    def test_already_started_stays_quiet_after_any_reminder(self):
+        assert tier_for(0.5, 15) is None
 
     def test_does_not_repeat_a_tier(self):
         assert tier_for(58, 60) is None
@@ -226,3 +232,23 @@ class TestRoutingCoversTheLadder:
         for rung in ESCALATION_LADDER:
             key = ("consecutive_miss", rung["template_key"])
             assert key in EXTRA_CHANNELS, f"rung {rung['template_key']} unrouted"
+
+
+class TestAtLeastOneReminder:
+    """No class starts in silence — the just-started grace guarantees one."""
+
+    def test_scheduled_8_minutes_before_gets_the_15_tier(self):
+        assert tier_for(8, 0)["minutes"] == 15
+
+    def test_scheduled_2_minutes_before_gets_the_15_tier(self):
+        assert tier_for(2, 0)["minutes"] == 15
+
+    def test_just_started_with_nothing_sent_gets_the_grace(self):
+        got = tier_for(-3, 0)
+        assert got is not None and got["minutes"] == 0
+
+    def test_grace_never_fires_when_a_reminder_already_went(self):
+        assert tier_for(-3, 15) is None
+
+    def test_grace_expires_for_a_class_long_underway(self):
+        assert tier_for(-25, 0) is None

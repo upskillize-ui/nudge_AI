@@ -78,6 +78,9 @@ TOPIC = {
 }
 
 CLASS_REMINDER = {
+    0: [{"title": "Your class has just started",
+         "body": "Namaste. {topic} is live right now \u2014 you can still join and catch almost everything. Come in!",
+         "severity": "info", "cta": "Join now"}],
     60: [{"title": "{topic} starts in one hour",
           "body": "Namaste. Today we learn {topic}. The joining link will be ready for you.",
           "severity": "info", "cta": "View class"}],

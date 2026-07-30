@@ -29,8 +29,15 @@ REMINDER_TIERS = [
 #: minutes away still counts as the 60-minute tier.
 TIER_TOLERANCE_MINUTES = 6
 
-#: Do not remind about a class that has already started.
+#: Do not send a *pre-class* reminder once the class is this close to started.
 MIN_LEAD_MINUTES = 1
+
+#: The at-least-one guarantee. A class scheduled 8 minutes before start, or one
+#: whose registration arrived between sweeps, can start before any tier fires.
+#: For that case only — nothing sent yet, class began moments ago — a
+#: "just started, you can still join" nudge goes out instead of silence.
+STARTED_TIER = {"minutes": 0, "priority": "high"}
+STARTED_GRACE_MINUTES = 10
 
 
 def tier_for(minutes_until: float, already_sent: int) -> Optional[Dict]:
@@ -50,6 +57,10 @@ def tier_for(minutes_until: float, already_sent: int) -> Optional[Dict]:
         further along. 0 means nothing sent yet.
     """
     if minutes_until < MIN_LEAD_MINUTES:
+        # Just-started grace: only when NO reminder ever went out, and only
+        # within the first few minutes — never for a class long underway.
+        if not already_sent and -STARTED_GRACE_MINUTES <= minutes_until:
+            return STARTED_TIER
         return None
     for tier in REMINDER_TIERS:
         window = tier["minutes"] + TIER_TOLERANCE_MINUTES
