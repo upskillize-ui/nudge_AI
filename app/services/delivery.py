@@ -40,6 +40,9 @@ EXTRA_CHANNELS: Dict[Tuple[str, int], Tuple[str, ...]] = {
     ("consecutive_miss", 2): ("email",),
     ("consecutive_miss", 3): ("email",),
     ("consecutive_miss", 4): ("email", "whatsapp"),
+    # The ladder emits rung 5 for five or more misses — the MOST severe
+    # case. Without this key it fell off the table and went dashboard-only.
+    ("consecutive_miss", 5): ("email", "whatsapp"),
 
     # Coursework deadlines, by hours remaining.
     ("assignment_deadline", 72): (),
@@ -64,13 +67,17 @@ EXTRA_CHANNELS: Dict[Tuple[str, int], Tuple[str, ...]] = {
 #: Approved WhatsApp templates. Business-initiated messages MUST use one of
 #: these — Meta rejects free-form. Submit as UTILITY, not marketing.
 #: Maps nudge_type -> (template_name, ordered metadata keys for variables).
+#: Every template opens with the student's first name ({{1}}) and closes with
+#: the team sign-off, per the launch voice: greeting, warmth, closing — never
+#: a bare instruction. "name" is not metadata; the payload builder resolves it
+#: from the contact record.
 WHATSAPP_TEMPLATES: Dict[str, Tuple[str, Tuple[str, ...]]] = {
-    "class_reminder": ("class_starting_soon", ("course", "minutes", "url")),
-    "assignment_deadline": ("deadline_final_hours", ("title", "hours", "url")),
-    "coursework_missed": ("deadline_missed", ("title", "date", "mentor")),
-    "activity_abandoned": ("activity_expiring", ("activity", "hours", "percent", "url")),
-    "consecutive_miss": ("attendance_critical", ("misses", "course", "pct")),
-    "certificate_unlocked": ("certificate_ready", ("certificate", "url")),
+    "class_reminder": ("class_starting_soon", ("name", "course", "minutes", "url")),
+    "assignment_deadline": ("deadline_final_hours", ("name", "title", "hours", "url")),
+    "coursework_missed": ("deadline_missed", ("name", "title", "mentor")),
+    "activity_abandoned": ("activity_expiring", ("name", "activity", "hours", "percent", "url")),
+    "consecutive_miss": ("attendance_critical", ("name", "misses", "course")),
+    "certificate_unlocked": ("certificate_ready", ("name", "certificate", "url")),
 }
 
 #: Max characters per WhatsApp template variable.
@@ -200,10 +207,12 @@ class DeliveryService:
         """One templated WhatsApp message, variables in template order."""
         entry = WHATSAPP_TEMPLATES.get(nudge.nudge_type)
         meta = nudge.metadata_json or {}
+        first_name = (contact.full_name or "").split(" ")[0] or "friend"
         variables = []
         if entry:
             variables = [
-                str(meta.get(key, ""))[:WA_VAR_LIMIT] for key in entry[1]
+                (first_name if key == "name" else str(meta.get(key, "")))[:WA_VAR_LIMIT]
+                for key in entry[1]
             ]
         return {
             "nudge_id": nudge.id,

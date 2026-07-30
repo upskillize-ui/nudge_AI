@@ -6,7 +6,8 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models import Nudge, TopicPerformance
-from app.services.messages import MENTOR, SCORE, TOPIC, get_msg
+from app.services.copy import render
+from app.services.messages import MENTOR, SCORE, TOPIC
 from app.services.nudges import NudgeService
 
 log = logging.getLogger("services.topics")
@@ -167,10 +168,11 @@ class TopicService:
 
     def _celebrate(self, user_id: str, context: Dict) -> Optional[Nudge]:
         """Send a comeback nudge for a large improvement."""
-        message = get_msg(TOPIC, "improved", context)
+        message = render(TOPIC, "improved", context, nudge_type="topic_improvement")
         return self.nudges.create(
             user_id=user_id, role="student", nudge_type="topic_improvement",
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity="success", priority="low", cta_text=message["cta"],
         )
 
@@ -180,10 +182,13 @@ class TopicService:
     ) -> Optional[Nudge]:
         """Recognise a high score by naming the number, not the person."""
         delta = round(score - batch_average) if batch_average else 0
-        message = get_msg(SCORE, band["key"], {**context, "delta": delta})
+        message = render(SCORE, band["key"], {**context, "delta": delta},
+                         nudge_type=band["nudge_type"],
+                         escalation=3 if band["alert_mentor"] else 0)
         return self.nudges.create(
             user_id=user_id, role="student", nudge_type=band["nudge_type"],
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity=band["severity"], priority=band["priority"],
             cta_text=message["cta"],
             meta={"score": round(score), "topic": context.get("topic", ""),
@@ -211,10 +216,11 @@ class TopicService:
         if repeated:
             if mentor_id:
                 self._alert_mentor(mentor_id, student_name, performance.attempt_count)
-            message = get_msg(TOPIC, "repeated", context)
+            message = render(TOPIC, "repeated", context, nudge_type="topic_improvement")
             return self.nudges.create(
                 user_id=user_id, role="student", nudge_type="topic_improvement",
                 title=message["title"], body=message["body"],
+                template_id=message["template_id"],
                 severity="warning", priority="high", cta_text=message["cta"],
             )
 
@@ -222,19 +228,22 @@ class TopicService:
             key = "below_avg"
         else:
             key = "low"
-        message = get_msg(TOPIC, key, context)
+        message = render(TOPIC, key, context, nudge_type="topic_improvement")
         return self.nudges.create(
             user_id=user_id, role="student", nudge_type="topic_improvement",
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity=message["severity"], priority="medium", cta_text=message["cta"],
         )
 
     def _alert_mentor(self, mentor_id: str, student_name: str, attempts: int) -> None:
         """Tell the mentor a student is repeatedly scoring below the pass mark."""
-        message = get_msg(MENTOR, "low_scores", {"student": student_name, "count": attempts})
+        message = render(MENTOR, "low_scores", {"student": student_name, "count": attempts},
+                         nudge_type="mentor_alert", escalation=attempts)
         self.nudges.create(
             user_id=mentor_id, role="mentor", nudge_type="mentor_alert",
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity="warning", priority="high", cta_text=message["cta"],
         )
 

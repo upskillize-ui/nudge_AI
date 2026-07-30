@@ -211,3 +211,18 @@ class TestCopyFallback:
                                                       "body": "Let's find a way back in."})
         assert got["title"] == "Three weeks quiet"
         assert got["template_id"].endswith(":ai")
+
+
+class TestRoutingCoversTheLadder:
+    """Every rung the attendance ladder can emit must have a routing entry."""
+
+    def test_rung_five_reaches_email_and_whatsapp(self):
+        # The ladder emits 1, 2, 3 and 5 — five-plus misses is the MOST severe
+        # case and previously fell off the table entirely (dashboard-only).
+        assert set(EXTRA_CHANNELS[("consecutive_miss", 5)]) == {"email", "whatsapp"}
+
+    def test_every_ladder_rung_is_routable(self):
+        from app.services.attendance import ESCALATION_LADDER
+        for rung in ESCALATION_LADDER:
+            key = ("consecutive_miss", rung["template_key"])
+            assert key in EXTRA_CHANNELS, f"rung {rung['template_key']} unrouted"

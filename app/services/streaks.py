@@ -6,7 +6,8 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models import AttendanceTracker, Nudge, Streak
-from app.services.messages import STREAK, get_msg
+from app.services.copy import render
+from app.services.messages import STREAK
 from app.services.nudges import NudgeService
 
 log = logging.getLogger("services.streaks")
@@ -107,14 +108,15 @@ class StreakService:
 
     def _celebrate(self, streak: Streak, milestone: Dict, course_name: str) -> Optional[Nudge]:
         """Send the milestone nudge, naming the number rather than gushing."""
-        message = get_msg(STREAK, milestone["key"], {
+        message = render(STREAK, milestone["key"], {
             "count": streak.current_classes,
             "course": course_name,
             "pct": self._attendance_pct(streak.user_id, streak.course_id),
-        })
+        }, nudge_type="streak", escalation=milestone["label"])
         return self.nudges.create(
             user_id=streak.user_id, role="student", nudge_type="streak",
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity="success", priority="low", cta_text=message["cta"],
             cta_url=f"/courses/{streak.course_id}/attendance",
             meta={"milestone": milestone["classes"], "course_id": streak.course_id},

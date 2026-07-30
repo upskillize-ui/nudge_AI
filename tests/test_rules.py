@@ -20,7 +20,9 @@ class TestEscalationLadder:
 
     @pytest.mark.parametrize("misses,priority,alerts", [
         (1, "medium", False),
-        (2, "high", False),
+        # Mentor joins at 2 misses — in a 30-day course, waiting for 3 means
+        # 10% of the course is gone before a human hears about it.
+        (2, "high", True),
         (3, "critical", True),
         (5, "critical", True),
     ])

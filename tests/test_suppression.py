@@ -90,3 +90,58 @@ class TestPersistedFields:
         assert nudge.status == "pending"
         assert nudge.expires_at > datetime.utcnow()
         assert db.query(Nudge).count() == 1
+
+
+class TestStatusOwnership:
+    """PATCH /nudges/{id}/status must not act on another user's nudge."""
+
+    def _make(self, db):
+        from app.services.nudges import NudgeService
+        return NudgeService(db).create(
+            user_id="owner-1", role="student", nudge_type="ownership_test",
+            title="t", body="b",
+        )
+
+    def test_owner_can_update(self, db):
+        from app.routes.feed import update_status
+        from app.schemas import StatusUpdate
+        nudge = self._make(db)
+        got = update_status(nudge.id, StatusUpdate(status="read"), user_id="owner-1", db=db)
+        assert got["ok"] is True
+
+    def test_other_user_gets_404_not_403(self, db):
+        """404 so the response never confirms the guessed id exists."""
+        import pytest
+        from fastapi import HTTPException
+        from app.routes.feed import update_status
+        from app.schemas import StatusUpdate
+        nudge = self._make(db)
+        with pytest.raises(HTTPException) as err:
+            update_status(nudge.id, StatusUpdate(status="read"), user_id="intruder-9", db=db)
+        assert err.value.status_code == 404
+
+    def test_legacy_caller_without_user_id_still_works(self, db):
+        """The deployed LMS does not send user_id yet — must not break it."""
+        from app.routes.feed import update_status
+        from app.schemas import StatusUpdate
+        nudge = self._make(db)
+        got = update_status(nudge.id, StatusUpdate(status="read"), user_id="", db=db)
+        assert got["ok"] is True
+
+
+class TestTemplateAttribution:
+    """Every nudge records which copy variant produced it."""
+
+    def test_template_id_is_persisted(self, db):
+        from app.services.copy import render
+        from app.services.messages import MISS
+        from app.services.nudges import NudgeService
+        message = render(MISS, 1, {"lecture_title": "RAG", "course_name": "CBAF",
+                                   "attended_pct": 90, "name": "A"},
+                         nudge_type="consecutive_miss", escalation=1)
+        nudge = NudgeService(db).create(
+            user_id="u1", role="student", nudge_type="consecutive_miss",
+            title=message["title"], body=message["body"],
+            template_id=message["template_id"],
+        )
+        assert nudge.template_id == "consecutive_miss:1"

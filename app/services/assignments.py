@@ -6,7 +6,8 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models import AssignmentTracker, Nudge
-from app.services.messages import ASSIGNMENT, get_msg
+from app.services.copy import render
+from app.services.messages import ASSIGNMENT
 from app.services.nudges import NudgeService
 
 log = logging.getLogger("services.assignments")
@@ -158,13 +159,14 @@ class AssignmentService:
         if not stage:
             return None
 
-        message = get_msg(ASSIGNMENT, stage["template_key"], {
+        message = render(ASSIGNMENT, stage["template_key"], {
             "title": tracker.title, "type": tracker.assignment_type,
             "days": (now - tracker.uploaded_at).days, "hours": round(hours_left),
-        })
+        }, nudge_type="assignment_deadline", escalation=stage.get("max_hours_left", 0))
         nudge = self.nudges.create(
             user_id=tracker.user_id, role="student", nudge_type="assignment_deadline",
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity=message["severity"], priority=stage["priority"],
             cta_text=message["cta"], cta_url=f"/assignments/{tracker.assignment_id}",
             # `type` is what lets the client tell a capstone from a case study

@@ -12,7 +12,8 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models import ActivityAttempt, Nudge
-from app.services.messages import ABANDONED, get_msg
+from app.services.copy import render
+from app.services.messages import ABANDONED
 from app.services.nudges import NudgeService
 
 log = logging.getLogger("services.activities")
@@ -184,7 +185,7 @@ class ActivityService:
             return None
 
         percent = attempt.progress_percent or 0
-        message = get_msg(ABANDONED, stage["stage"], {
+        message = render(ABANDONED, stage["stage"], {
             "activity": attempt.activity_name,
             "done": attempt.steps_done or 0,
             "total": attempt.steps_total or 0,
@@ -192,12 +193,13 @@ class ActivityService:
             "minutes": minutes_remaining(attempt.steps_done, attempt.steps_total),
             "when": (attempt.last_seen_at or now).strftime("%A"),
             "hours": round(to_expiry.total_seconds() / 3600) if to_expiry else 0,
-        })
+        }, nudge_type="activity_abandoned", escalation=stage["stage"])
 
         nudge = self.nudges.create(
             user_id=attempt.user_id, role="student",
             nudge_type="activity_abandoned",
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity=stage["severity"], priority=stage["priority"],
             cta_text=message["cta"], cta_url=attempt.resume_url,
             meta={

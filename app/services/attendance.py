@@ -6,7 +6,8 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models import AttendanceTracker, Nudge
-from app.services.messages import MENTOR, MISS, get_msg
+from app.services.copy import render
+from app.services.messages import MENTOR, MISS
 from app.services.nudges import NudgeService
 from app.services.streaks import StreakService
 
@@ -18,7 +19,10 @@ log = logging.getLogger("services.attendance")
 ESCALATION_LADDER = [
     {"min_misses": 5, "template_key": 5, "priority": "critical", "alert_mentor": True},
     {"min_misses": 3, "template_key": 3, "priority": "critical", "alert_mentor": True},
-    {"min_misses": 2, "template_key": 2, "priority": "high", "alert_mentor": False},
+    # Mentor joins at TWO misses. In a 30-day course, three misses is 10% of
+    # the whole course gone before anyone human hears about it — by two, a
+    # phone call still catches the student while catching up is easy.
+    {"min_misses": 2, "template_key": 2, "priority": "high", "alert_mentor": True},
     {"min_misses": 1, "template_key": 1, "priority": "medium", "alert_mentor": False},
 ]
 
@@ -165,10 +169,12 @@ class AttendanceService:
         tracker.last_nudge_at = datetime.utcnow()
         self.db.commit()
 
-        message = get_msg(MISS, rung["template_key"], context)
+        message = render(MISS, rung["template_key"], context,
+                         nudge_type="consecutive_miss", escalation=rung["template_key"])
         nudge = self.nudges.create(
             user_id=tracker.user_id, role="student", nudge_type="consecutive_miss",
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity=message["severity"], priority=rung["priority"],
             cta_text=message["cta"], cta_url=f"/courses/{course_id}/recordings",
             meta={"misses": misses, "course_id": course_id, "pct": attended_pct,
@@ -189,13 +195,14 @@ class AttendanceService:
         misses: int,
     ) -> None:
         """Notify the mentor that a student has crossed the alert threshold."""
-        message = get_msg(MENTOR, "miss", {
+        message = render(MENTOR, "miss", {
             "student": student_name, "batch": batch_id, "misses": misses,
             "last_active": str(tracker.last_attended_at or "unknown"),
-        })
+        }, nudge_type="mentor_alert", escalation=misses)
         self.nudges.create(
             user_id=mentor_id, role="mentor", nudge_type="mentor_alert",
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity="critical", priority="critical", cta_text=message["cta"],
             meta={"student_id": tracker.user_id, "misses": misses,
                   "type": "consecutive_miss"},

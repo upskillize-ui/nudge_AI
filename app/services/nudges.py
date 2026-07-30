@@ -44,6 +44,7 @@ class NudgeService:
         cta_url: str = "",
         meta: Optional[Dict[str, Any]] = None,
         escalation: int = 0,
+        template_id: str = "",
     ) -> Optional[Nudge]:
         """Create a nudge unless send policy suppresses it.
 
@@ -59,6 +60,7 @@ class NudgeService:
             cta_url: Button target.
             meta: Arbitrary JSON payload stored with the nudge.
             escalation: Escalation level, 0-4.
+            template_id: Which copy variant produced the text, for attribution.
 
         Returns:
             The persisted Nudge, or None if suppressed.
@@ -75,7 +77,7 @@ class NudgeService:
             cta_text=cta_text, cta_url=cta_url, severity=severity,
             metadata_json=meta or {}, status="pending",
             scheduled_at=now, expires_at=now + NUDGE_TTL,
-            escalation_level=escalation,
+            escalation_level=escalation, template_id=template_id,
         )
         self.db.add(nudge)
         self.db.commit()

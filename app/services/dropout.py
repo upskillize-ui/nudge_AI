@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import (AssignmentTracker, AttendanceTracker, Nudge,
                         RecordingTracker, StudentFeatures, TopicPerformance)
-from app.services.messages import MENTOR, get_msg
+from app.services.copy import render
+from app.services.messages import MENTOR
 from app.services.nudges import NudgeService
 
 log = logging.getLogger("services.dropout")
@@ -217,11 +218,11 @@ class DropoutService:
             )
             return None
 
-        message = get_msg(MENTOR, "dropout", {
+        message = render(MENTOR, "dropout", {
             "student": features.user_id,
             "prob": round(probability * 100),
             "days": features.days_since_last_login or 0,
-        })
+        }, nudge_type="dropout_risk")
         return self.nudges.create(
             user_id=mentor_id, role="mentor",
             nudge_type="dropout_risk", title=message["title"], body=message["body"],

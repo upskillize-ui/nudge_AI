@@ -94,13 +94,27 @@ def _unread(db: Session, user_id: str, role: str) -> int:
 
 
 @router.patch("/{nudge_id}/status")
-def update_status(nudge_id: str, update: StatusUpdate, db: Session = Depends(get_db)):
-    """Mark a nudge read, clicked or dismissed, and log the event."""
+def update_status(
+    nudge_id: str,
+    update: StatusUpdate,
+    user_id: str = Query(""),
+    db: Session = Depends(get_db),
+):
+    """Mark a nudge read, clicked or dismissed, and log the event.
+
+    Ownership: when the caller supplies ``user_id`` (the LMS proxy passes the
+    JWT identity), the nudge must belong to that user — otherwise a logged-in
+    user who guessed another user's nudge UUID could mark it read. The check
+    is enforced whenever the parameter is present; it is optional only so the
+    already-deployed LMS keeps working until its proxy starts sending it.
+    A mismatch returns 404, not 403, so the response never confirms that the
+    guessed id exists.
+    """
     if update.status not in ALLOWED_STATUSES:
         raise HTTPException(400, f"status must be one of {sorted(ALLOWED_STATUSES)}")
 
     nudge = db.query(Nudge).filter(Nudge.id == nudge_id).first()
-    if not nudge:
+    if not nudge or (user_id and nudge.user_id != user_id):
         raise HTTPException(404, "nudge not found")
 
     now = datetime.utcnow()

@@ -11,7 +11,8 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models import Nudge, ScheduledClass
-from app.services.messages import CLASS_REMINDER, get_msg
+from app.services.copy import render
+from app.services.messages import CLASS_REMINDER
 from app.services.nudges import NudgeService
 
 log = logging.getLogger("services.sessions")
@@ -171,13 +172,15 @@ class SessionService:
             return []
 
         topic = scheduled.title or "your next class"
-        message = get_msg(CLASS_REMINDER, tier["minutes"], {"topic": topic})
+        message = render(CLASS_REMINDER, tier["minutes"], {"topic": topic},
+                         nudge_type="class_reminder", escalation=tier["minutes"])
         created = []
 
         for user_id in (scheduled.student_ids or []):
             nudge = self.nudges.create(
                 user_id=str(user_id), role="student", nudge_type="class_reminder",
                 title=message["title"], body=message["body"],
+                template_id=message["template_id"],
                 severity=message["severity"], priority=tier["priority"],
                 cta_text=message["cta"], cta_url=scheduled.join_url,
                 meta={

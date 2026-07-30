@@ -7,7 +7,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import Nudge, RecordingTracker
-from app.services.messages import MENTOR, RECORDING, get_msg
+from app.services.copy import render
+from app.services.messages import MENTOR, RECORDING
 from app.services.nudges import NudgeService
 
 log = logging.getLogger("services.recordings")
@@ -154,10 +155,11 @@ class RecordingService:
             "days": days_overdue if watched else (now - tracker.uploaded_at).days,
         }
 
-        message = get_msg(RECORDING, key, context)
+        message = render(RECORDING, key, context, nudge_type="recording_unwatched")
         nudge = self.nudges.create(
             user_id=tracker.user_id, role="student", nudge_type="recording_unwatched",
             title=message["title"], body=message["body"],
+            template_id=message["template_id"],
             severity=message["severity"], priority="medium",
             cta_text=message["cta"], cta_url=f"/recordings/{tracker.lecture_id}",
         )
@@ -196,10 +198,12 @@ class RecordingService:
                     count, batch_id,
                 )
                 continue
-            message = get_msg(MENTOR, "recordings", {"count": count, "batch": batch_id})
+            message = render(MENTOR, "recordings", {"count": count, "batch": batch_id},
+                             nudge_type="mentor_alert", escalation=count)
             self.nudges.create(
                 user_id=mentor_id, role="mentor", nudge_type="mentor_alert",
                 title=message["title"], body=message["body"],
+                template_id=message["template_id"],
                 severity="warning", priority="medium", cta_text=message["cta"],
                 meta={"batch_id": batch_id, "type": "recordings_behind"},
             )
