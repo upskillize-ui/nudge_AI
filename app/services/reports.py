@@ -165,7 +165,8 @@ class ReportService:
         attendance = stats["attendance_pct"]
         if attendance is not None and attendance < TARGET_ATTENDANCE:
             tips.append(
-                f"Attendance is at {attendance}%. Aim for 85%+ to stay placement-eligible."
+                f"Attendance is at {attendance}%. Every class teaches one new "
+                "tool — the recordings of missed days bring you back to 85%+."
             )
         if stats["consecutive_misses"] >= TIP_MISS_THRESHOLD:
             tips.append(

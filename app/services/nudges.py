@@ -53,6 +53,7 @@ class NudgeService:
         meta: Optional[Dict[str, Any]] = None,
         escalation: int = 0,
         template_id: str = "",
+        expires_at: Optional[datetime] = None,
     ) -> Optional[Nudge]:
         """Create a nudge unless send policy suppresses it.
 
@@ -84,7 +85,9 @@ class NudgeService:
             priority=priority, title=title, body=body,
             cta_text=cta_text, cta_url=cta_url, severity=severity,
             metadata_json=meta or {}, status="pending",
-            scheduled_at=now, expires_at=now + NUDGE_TTL,
+            # A nudge about a timed event must not outlive the event — a
+            # "starts in one hour" card six hours after the class is noise.
+            scheduled_at=now, expires_at=expires_at or (now + NUDGE_TTL),
             escalation_level=escalation, template_id=template_id,
         )
         self.db.add(nudge)

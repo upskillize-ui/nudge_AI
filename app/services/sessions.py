@@ -201,6 +201,9 @@ class SessionService:
                     "url": scheduled.join_url,
                 },
                 escalation=tier["minutes"],
+                # Reminders die 15 minutes after the class starts — a stale
+                # "starts in one hour" card is worse than no card.
+                expires_at=scheduled.starts_at + timedelta(minutes=15),
             )
             if nudge:
                 created.append(nudge)
