@@ -168,14 +168,14 @@ class AssignmentService:
             title=message["title"], body=message["body"],
             template_id=message["template_id"],
             severity=message["severity"], priority=stage["priority"],
-            cta_text=message["cta"], cta_url=f"/assignments/{tracker.assignment_id}",
+            cta_text=message["cta"], cta_url="/student/coursework",
             # `type` is what lets the client tell a capstone from a case study
             # from an industry session — they all arrive as assignment_deadline,
             # and without it every one of them renders under "Assignments".
             meta={"assignment_id": tracker.assignment_id, "title": tracker.title,
                   "type": tracker.assignment_type,
                   "hours": round(hours_left), "hours_left": round(hours_left),
-                  "url": f"/assignments/{tracker.assignment_id}"},
+                  "url": "/student/coursework"},
             # Routing level = the stage's hour threshold, so 6h can reach
             # WhatsApp while 72h stays on the dashboard.
             escalation=stage.get("max_hours_left", 0),

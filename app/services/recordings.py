@@ -161,7 +161,7 @@ class RecordingService:
             title=message["title"], body=message["body"],
             template_id=message["template_id"],
             severity=message["severity"], priority="medium",
-            cta_text=message["cta"], cta_url=f"/recordings/{tracker.lecture_id}",
+            cta_text=message["cta"], cta_url=f"/student/course/{tracker.course_id}/materials",
         )
         if nudge:
             tracker.reminder_count = (tracker.reminder_count or 0) + 1

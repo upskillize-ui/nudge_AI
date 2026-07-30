@@ -40,7 +40,6 @@ TREND_BAND = 10
 CELEBRATION_DELTA = 20
 
 #: How far below the batch average counts as a gap worth naming.
-BELOW_AVERAGE_GAP = 30
 
 #: Consecutive sub-pass attempts before the mentor is looped in.
 REPEATED_FAILURE_ATTEMPTS = 2
@@ -180,9 +179,12 @@ class TopicService:
         self, user_id: str, band: Dict, context: Dict,
         score: float, batch_average: Optional[float],
     ) -> Optional[Nudge]:
-        """Recognise a high score by naming the number, not the person."""
-        delta = round(score - batch_average) if batch_average else 0
-        message = render(SCORE, band["key"], {**context, "delta": delta},
+        """Recognise a high score by naming the number, not the person.
+
+        The score stands on its own — never "above the batch average".
+        Students are not compared with each other, by policy.
+        """
+        message = render(SCORE, band["key"], context,
                          nudge_type=band["nudge_type"],
                          escalation=3 if band["alert_mentor"] else 0)
         return self.nudges.create(
@@ -224,11 +226,10 @@ class TopicService:
                 severity="warning", priority="high", cta_text=message["cta"],
             )
 
-        if batch_average and score < batch_average - BELOW_AVERAGE_GAP:
-            key = "below_avg"
-        else:
-            key = "low"
-        message = render(TOPIC, key, context, nudge_type="topic_improvement")
+        # No peer comparison, by policy: a student is never measured against
+        # the batch in anything we send them. Their only comparison is their
+        # own previous score, which the "improved" path already celebrates.
+        message = render(TOPIC, "low", context, nudge_type="topic_improvement")
         return self.nudges.create(
             user_id=user_id, role="student", nudge_type="topic_improvement",
             title=message["title"], body=message["body"],

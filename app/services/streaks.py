@@ -118,7 +118,7 @@ class StreakService:
             title=message["title"], body=message["body"],
             template_id=message["template_id"],
             severity="success", priority="low", cta_text=message["cta"],
-            cta_url=f"/courses/{streak.course_id}/attendance",
+            cta_url="/student/attendance",
             meta={"milestone": milestone["classes"], "course_id": streak.course_id},
             escalation=milestone["label"],
         )

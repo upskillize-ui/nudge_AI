@@ -176,7 +176,9 @@ class AttendanceService:
             title=message["title"], body=message["body"],
             template_id=message["template_id"],
             severity=message["severity"], priority=rung["priority"],
-            cta_text=message["cta"], cta_url=f"/courses/{course_id}/recordings",
+            # Recordings live inside Course Materials — a real page (Law 3).
+            cta_text=message["cta"],
+            cta_url=f"/student/course/{course_id}/materials",
             meta={"misses": misses, "course_id": course_id, "pct": attended_pct,
                   "course": lecture_title},
             escalation=rung["template_key"],

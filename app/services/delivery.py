@@ -200,6 +200,10 @@ class DeliveryService:
             "cta_text": nudge.cta_text,
             "cta_url": nudge.cta_url,
             "severity": nudge.severity,
+            # The wrapper prints WHY and WHEN on every email — a message
+            # without its reason and timestamp reads like spam.
+            "nudge_type": nudge.nudge_type,
+            "created_at": nudge.created_at.isoformat() + "Z" if nudge.created_at else "",
         }
 
     @staticmethod

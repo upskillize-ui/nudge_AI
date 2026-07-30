@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.models import ActivityAttempt, Nudge
 from app.services.copy import render
-from app.services.messages import ABANDONED
+from app.services.messages import ABANDONED, ABANDONED_INTERVIEW
 from app.services.nudges import NudgeService
 
 log = logging.getLogger("services.activities")
@@ -185,7 +185,10 @@ class ActivityService:
             return None
 
         percent = attempt.progress_percent or 0
-        message = render(ABANDONED, stage["stage"], {
+        # Interviews cannot resume midway — their copy must not claim saved
+        # progress. Everything else keeps the generic ladder.
+        family = ABANDONED_INTERVIEW if attempt.activity_type == "interview" else ABANDONED
+        message = render(family, stage["stage"], {
             "activity": attempt.activity_name,
             "done": attempt.steps_done or 0,
             "total": attempt.steps_total or 0,
