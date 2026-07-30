@@ -107,3 +107,4 @@ class TestQuietHoursWindow:
     def test_window_within_one_day(self):
         assert is_within_window(10, 9, 17) is True
         assert is_within_window(18, 9, 17) is False
+

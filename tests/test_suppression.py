@@ -145,3 +145,37 @@ class TestTemplateAttribution:
             template_id=message["template_id"],
         )
         assert nudge.template_id == "consecutive_miss:1"
+
+
+class TestClassReminderDedupWindow:
+    """Production bug: the 4h dedup let only the FIRST reminder tier through —
+    tier 60 delivered, tiers 30/15/0 silently suppressed. class_reminder now
+    has a 10-minute window so every tier lands while duplicate sweeps stay
+    suppressed."""
+
+    def test_class_reminder_has_short_window(self):
+        from app.services.nudges import DEDUP_OVERRIDES, DEDUP_WINDOW
+        assert DEDUP_OVERRIDES["class_reminder"] <= timedelta(minutes=15)
+        assert DEDUP_OVERRIDES["class_reminder"] < DEDUP_WINDOW
+
+    def test_next_tier_not_suppressed(self, db):
+        """A tier-60 reminder 30 minutes ago must not block the tier-30 one,
+        while a duplicate inside ten minutes IS still suppressed."""
+        svc = NudgeService(db)
+        db.add(Nudge(
+            user_id="u1", user_role="student", nudge_type="class_reminder",
+            priority="medium", title="t", body="b", severity="info",
+            status="pending", scheduled_at=datetime.utcnow(),
+            created_at=datetime.utcnow() - timedelta(minutes=30),
+        ))
+        db.commit()
+        assert svc._sent_recently("u1", "class_reminder") is False
+
+        db.add(Nudge(
+            user_id="u2", user_role="student", nudge_type="class_reminder",
+            priority="medium", title="t", body="b", severity="info",
+            status="pending", scheduled_at=datetime.utcnow(),
+            created_at=datetime.utcnow() - timedelta(minutes=2),
+        ))
+        db.commit()
+        assert svc._sent_recently("u2", "class_reminder") is True

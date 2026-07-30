@@ -21,6 +21,14 @@ settings = get_settings()
 #: How long the same (user, nudge_type) pair is suppressed after a send.
 DEDUP_WINDOW = timedelta(hours=4)
 
+#: Types whose ladder legitimately fires again within four hours. Class
+#: reminder tiers land 60/30/15/0 minutes before start — under the general
+#: window only the FIRST tier ever reached the student and the rest were
+#: silently deduped (found in production: tier 60 delivered, tier 30
+#: suppressed). Ten minutes still swallows duplicate sweep runs while
+#: letting every tier through.
+DEDUP_OVERRIDES = {"class_reminder": timedelta(minutes=10)}
+
 #: How long a pending nudge stays live before the expiry job retires it.
 NUDGE_TTL = timedelta(days=3)
 
@@ -129,7 +137,7 @@ class NudgeService:
 
     def _sent_recently(self, user_id: str, nudge_type: str) -> bool:
         """Whether an identical nudge type went out inside the dedup window."""
-        cutoff = datetime.utcnow() - DEDUP_WINDOW
+        cutoff = datetime.utcnow() - DEDUP_OVERRIDES.get(nudge_type, DEDUP_WINDOW)
         return self.db.query(Nudge.id).filter(
             Nudge.user_id == user_id,
             Nudge.nudge_type == nudge_type,
