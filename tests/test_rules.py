@@ -108,3 +108,39 @@ class TestQuietHoursWindow:
         assert is_within_window(10, 9, 17) is True
         assert is_within_window(18, 9, 17) is False
 
+
+
+class TestAdmissionControl:
+    """A full worker answers 503 with the student-readable message instead of
+    hanging; health stays exempt so keep-warm never gets refused."""
+
+    def _client(self, cap):
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+        from app.utils.admission import AdmissionControl
+        inner = FastAPI()
+
+        @inner.get("/api/v1/ping")
+        def ping():
+            return {"ok": True}
+
+        @inner.get("/health")
+        def health():
+            return {"ok": True}
+
+        return TestClient(AdmissionControl(inner, cap), raise_server_exceptions=False)
+
+    def test_full_house_refuses_politely(self):
+        client = self._client(cap=0)
+        r = client.get("/api/v1/ping")
+        assert r.status_code == 503
+        assert "occupied" in r.json()["message"]
+        assert r.headers["retry-after"] == "60"
+
+    def test_health_always_admitted(self):
+        client = self._client(cap=0)
+        assert client.get("/health").status_code == 200
+
+    def test_normal_load_admitted(self):
+        client = self._client(cap=10)
+        assert client.get("/api/v1/ping").status_code == 200

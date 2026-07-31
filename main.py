@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.database import init_db
 from app.routes import admin, feed, webhooks
 from app.services.scheduler import start_scheduler, stop_scheduler
+from app.utils.admission import AdmissionControl
 
 logging.basicConfig(
     level=logging.INFO,
@@ -121,7 +122,7 @@ def create_app() -> FastAPI:
     return app
 
 
-app = create_app()
+app = create_app()  # FastAPI instance — routes below attach to this
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -166,3 +167,10 @@ async def health():
         "today": today,
         "ai_enabled": settings.enable_dropout_prediction,
     }
+
+
+# Outermost ASGI layer: when this worker is full, new requests get an honest
+# "all sessions are occupied — try again in a few minutes" 503 instead of an
+# invisible queue that ends in a timeout. /health and / stay exempt so
+# keep-warm and monitoring are never refused. Uvicorn serves `asgi`.
+asgi = AdmissionControl(app, settings.max_concurrent_requests)

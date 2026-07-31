@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     environment: str = "development"
     max_nudges_per_day: int = 8
     nudge_check_interval_minutes: int = 15
+    #: Admission control: max in-flight requests PER WORKER before new ones
+    #: get an honest "all sessions are occupied" 503. Space-wide ceiling is
+    #: this value x number of workers (4), so the default allows 320
+    #: concurrent requests — far above normal load, a fuse for herd moments.
+    max_concurrent_requests: int = 80
     #: Localhost port used only as a cross-worker lock for scheduler election.
     scheduler_lock_port: int = 7899
     quiet_hours_start: int = 22

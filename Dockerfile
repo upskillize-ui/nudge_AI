@@ -11,4 +11,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN mkdir -p models
 EXPOSE 7860
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "4"]
+# PORT: Render injects it; HuggingFace expects 7860 — the fallback keeps one
+# Dockerfile working on both platforms during and after the migration.
+CMD ["sh", "-c", "uvicorn main:asgi --host 0.0.0.0 --port ${PORT:-7860} --workers 4"]

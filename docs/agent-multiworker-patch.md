@@ -116,3 +116,40 @@ is slow (AI calls, shared CPU) — upgrade that Space's hardware:
 Space page → Settings → Space hardware → CPU Upgrade (8 vCPU, ~$0.03/hr ≈
 $22/month). Note: the $9 PRO account subscription does NOT change Space
 hardware. Upgrade only the Spaces students actually hammer.
+
+---
+
+## Step 6 — admission control (do this together with the workers)
+
+When every slot is genuinely busy (an all-batch mock test), a new request
+must get an honest answer, not an invisible queue ending in a timeout.
+NudgeAI's reference implementation is `app/utils/admission.py` in the
+Nudge_AI repo — copy that file into each agent, then:
+
+```python
+# main.py (or wherever the FastAPI app is created)
+from app.utils.admission import AdmissionControl
+from app.config import get_settings  # or read the env var directly
+
+app = create_app()          # FastAPI instance — routes attach to this
+asgi = AdmissionControl(app, int(os.environ.get("MAX_CONCURRENT_REQUESTS", 25)))
+```
+
+```dockerfile
+CMD ["uvicorn", "main:asgi", "--host", "0.0.0.0", "--port", "7860", "--workers", "4"]
+```
+
+IMPORTANT: wrap AFTER all `@app.get/...` routes are registered (export a
+separate `asgi` object; keep decorating `app`). Serving `main:app` instead of
+`main:asgi` silently disables the protection.
+
+Caps per worker, by agent type:
+- Fast DB agents (NudgeAI): 80 (already set)
+- AI/chat agents (AiRev, TestGen, ProfileIQ): 25
+- Voice interviews (InterviewIQ backend): 15 — each session is heavy
+
+Students see: "All sessions are occupied just for a moment — a spot opens
+up shortly. Please try again in a few minutes." (Positive, certain of
+return, no internal load details, and no claims about saved work — just the
+wait and the way back.) (HTTP 503 + Retry-After: 60; the Vyom frontend already renders it.)
+/health stays exempt so keep-warm never gets refused.
