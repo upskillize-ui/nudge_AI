@@ -42,6 +42,33 @@ DEFAULT_ORIGINS = [
 ]
 
 
+def _elect_scheduler_leader() -> bool:
+    """Exactly one worker process runs the cron jobs.
+
+    Uvicorn now runs multiple workers so the API can serve students
+    concurrently — but each worker imports this module, and if every one of
+    them started APScheduler, every cron tick would fire N times and students
+    would receive N copies of each nudge (this actually happened with
+    --workers 2, which is why the count was pinned to 1 for months).
+
+    Election is a localhost port bind: the one worker that wins the bind is
+    the leader and runs the scheduler; the rest just serve HTTP. If the
+    leader dies, its listening socket dies with it and the next restart
+    re-elects. No files, no new dependencies, works in any container.
+    """
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", int(settings.scheduler_lock_port)))
+        sock.listen(1)
+        _elect_scheduler_leader._lock = sock  # keep alive for process lifetime
+        return True
+    except OSError:
+        sock.close()
+        return False
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Initialise the database and scheduler, and shut the scheduler down."""
@@ -54,8 +81,12 @@ async def lifespan(_app: FastAPI):
         except Exception as exc:  # noqa: BLE001 — startup must survive DB outage
             log.error("DB init failed: %s", exc)
         try:
-            start_scheduler()
-            scheduler_started = True
+            if _elect_scheduler_leader():
+                start_scheduler()
+                scheduler_started = True
+                log.info("This worker is the scheduler leader")
+            else:
+                log.info("Scheduler runs in another worker — this one only serves HTTP")
         except Exception as exc:  # noqa: BLE001
             log.error("Scheduler start failed: %s", exc)
         yield

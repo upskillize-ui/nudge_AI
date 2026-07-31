@@ -1,5 +1,6 @@
-# PATCH: --workers 2 caused APScheduler jobs to fire in BOTH worker processes,
-# resulting in duplicate nudges every cron tick. Run a single uvicorn worker.
+# Four workers so student requests are served concurrently. The old duplicate-
+# nudge problem (cron firing in every worker) is solved by leader election in
+# main.py — exactly one worker binds the lock port and runs the scheduler.
 # If you need horizontal scaling, move scheduler to a separate sidecar process
 # or use a distributed lock (e.g., redis-based apscheduler-redis).
 FROM python:3.11-slim
@@ -10,4 +11,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN mkdir -p models
 EXPOSE 7860
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "4"]

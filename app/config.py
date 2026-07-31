@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     max_nudges_per_day: int = 8
     nudge_check_interval_minutes: int = 15
+    #: Localhost port used only as a cross-worker lock for scheduler election.
+    scheduler_lock_port: int = 7899
     quiet_hours_start: int = 22
     quiet_hours_end: int = 7
     timezone: str = "Asia/Kolkata"
