@@ -165,7 +165,12 @@ class SessionService:
 
         upcoming = self.db.query(ScheduledClass).filter(
             ScheduledClass.cancelled.is_(False),
-            ScheduledClass.starts_at > now,
+            # Include classes that began within the grace window — otherwise
+            # the just-started "you can still join" tier can never fire,
+            # because a started class would be filtered out before tier_for()
+            # ever saw it. Found in production: a class the agent learned
+            # about late started in total silence.
+            ScheduledClass.starts_at > now - timedelta(minutes=STARTED_GRACE_MINUTES),
             ScheduledClass.starts_at <= horizon,
         ).all()
 
@@ -208,7 +213,10 @@ class SessionService:
             if nudge:
                 created.append(nudge)
 
-        scheduled.reminded_at_tier = tier["minutes"]
+        # -1 marks "just-started notice sent" — the started tier is minute 0,
+        # and storing a plain 0 would read as "nothing sent yet", making the
+        # grace nudge eligible to fire again on the very next sweep.
+        scheduled.reminded_at_tier = tier["minutes"] or -1
         log.info("Class %s: %d-minute reminder to %d students",
                  scheduled.class_id, tier["minutes"], len(created))
         return created

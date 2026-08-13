@@ -252,3 +252,11 @@ class TestAtLeastOneReminder:
 
     def test_grace_expires_for_a_class_long_underway(self):
         assert tier_for(-25, 0) is None
+
+    def test_grace_sent_marker_blocks_a_second_grace(self):
+        # The started tier is minute 0; it is recorded as -1 so it never
+        # reads as "nothing sent yet". A -1 must block the grace re-firing.
+        assert tier_for(-3, -1) is None
+
+    def test_grace_sent_marker_blocks_regular_tiers_too(self):
+        assert tier_for(20, -1) is None
